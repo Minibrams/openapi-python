@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-app = FastAPI(title="OpenPylit Static Type Fixture")
+app = FastAPI()
 
 
 class Book(BaseModel):

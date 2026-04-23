@@ -1,7 +1,11 @@
 {
-  "include": ["."],
-  "exclude": ["generated"],
-  "extraPaths": ["generated"],
+  "include": [
+    "."
+  ],
+  "exclude": [
+    ".venv",
+    "**/generated"
+  ],
   "typeCheckingMode": "standard",
   "reportMissingImports": true,
   "reportUnusedVariable": true,

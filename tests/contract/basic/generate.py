@@ -3,19 +3,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from openpylit.generator import GenerationRequest, generate_client
-from tests.fixture_app import app
+from app import app
 
-ROOT = Path(__file__).resolve().parent
-GENERATED_ROOT = ROOT / "generated"
+from openpylit.generator import GenerationRequest, generate_client
 
 
 def main() -> None:
     generate_client(
         GenerationRequest(
-            output_dir=GENERATED_ROOT,
+            output_dir=Path(__file__).parent / "generated",
             spec_json=json.dumps(app.openapi()),
-            package_name="static_client",
             overwrite=True,
         )
     )
