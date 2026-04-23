@@ -31,3 +31,10 @@ repos:
         entry: uv run basedpyright .
         pass_filenames: false
         priority: 1
+
+      - id: contract tests
+        name: contract tests
+        language: system
+        entry: uv run pytest tests/test_contracts.py -n auto
+        pass_filenames: false
+        priority: 2

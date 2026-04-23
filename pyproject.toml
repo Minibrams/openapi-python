@@ -30,6 +30,7 @@ dev = [
     "fastapi>=0.115.12",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
+    "pytest-xdist>=3.6.1",
     "ruff>=0.9.10",
     "twine>=6.1.0",
     "uvicorn>=0.34.0",
