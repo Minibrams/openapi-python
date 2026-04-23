@@ -98,6 +98,8 @@ class _TypeBuilder:
     def _schema_to_type(self, schema: dict, hint: str) -> str:
         if not isinstance(schema, dict):
             return "Any"
+        if not schema:
+            return "Any"
 
         ref = schema.get("$ref")
         if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
@@ -144,6 +146,16 @@ class _TypeBuilder:
         if schema_type == "array":
             item_type = self._schema_to_type(schema.get("items") or {}, f"{hint}Item")
             base = f"list[{item_type}]"
+            return f"{base} | None" if nullable else base
+
+        additional_properties = schema.get("additionalProperties")
+        if (
+            schema_type == "object"
+            and "properties" not in schema
+            and isinstance(additional_properties, dict)
+        ):
+            value_type = self._schema_to_type(additional_properties, f"{hint}Value")
+            base = f"dict[str, {value_type}]"
             return f"{base} | None" if nullable else base
 
         if schema_type == "object" or "properties" in schema:
@@ -295,6 +307,8 @@ def _response_type(builder: _TypeBuilder, operation: dict, hint: str) -> str:
         json_content = content.get("application/json") or {}
         schema = json_content.get("schema")
         if isinstance(schema, dict):
+            if not schema:
+                return "None"
             return builder.schema_type(schema, hint)
     return "None"
 
