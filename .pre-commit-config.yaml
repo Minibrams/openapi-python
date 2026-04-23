@@ -1,0 +1,33 @@
+repos:
+  - repo: local
+    hooks:
+      - id: sync packages
+        name: sync packages
+        language: system
+        entry: uv sync --locked --all-packages
+        stages: [pre-commit]
+        pass_filenames: false
+        priority: 0
+
+      - id: format
+        name: sort imports
+        language: system
+        entry: uv run ruff check --select I --fix .
+        stages: [pre-commit]
+        pass_filenames: false
+        priority: 1
+
+      - id: format
+        name: format
+        language: system
+        entry: uv run ruff format .
+        stages: [pre-commit]
+        pass_filenames: false
+        priority: 1
+
+      - id: type check
+        name: type check
+        language: system
+        entry: uv run basedpyright .
+        pass_filenames: false
+        priority: 1

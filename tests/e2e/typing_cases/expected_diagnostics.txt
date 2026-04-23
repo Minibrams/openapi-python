@@ -1,0 +1,2 @@
+"Literal[123]" is not assignable to "str"
+"Literal['yes']" is not assignable to "bool"

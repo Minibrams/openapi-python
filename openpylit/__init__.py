@@ -1,8 +1,7 @@
-"""Backward-compatible import surface for legacy openpylit.generate modules."""
-
-from openpylit.generator import (
+from .generator import (
     GenerationRequest,
     GenerationResult,
+    GeneratorExtensions,
     generate_client,
     try_generate_client,
 )
@@ -10,6 +9,7 @@ from openpylit.generator import (
 __all__ = [
     "GenerationRequest",
     "GenerationResult",
+    "GeneratorExtensions",
     "generate_client",
     "try_generate_client",
 ]

@@ -1,0 +1,25 @@
+{
+    "name": "dev",
+    "dockerComposeFile": [
+        "docker-compose.yml"
+    ],
+    "service": "dev",
+    "workspaceFolder": "/code",
+    "overrideCommand": true,
+    "postCreateCommand": "prek install",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                // General dev
+                "openai.chatgpt",
+                // Python dev
+                "charliermarsh.ruff",
+                "detachhead.basedpyright",
+                "tamasfe.even-better-toml"
+            ],
+            "settings": {
+                "terminal.integrated.shell.linux": "/bin/bash"
+            }
+        }
+    }
+}

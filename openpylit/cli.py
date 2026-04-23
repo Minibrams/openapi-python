@@ -1,87 +1,68 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
-from typing import Any, Dict
-from urllib.parse import urlparse
 
-import httpx
-import yaml  # type: ignore
-
-from openpylit.generate.generator import generate_from_dict
+from openpylit.generator import GenerationRequest, try_generate_client
 
 
-def _load_spec_from_path(p: Path) -> Dict[str, Any]:
-    txt = p.read_text(encoding="utf-8")
-    if p.suffix.lower() in {".yaml", ".yml"}:
-        return yaml.safe_load(txt)
-    try:
-        return json.loads(txt)
-    except json.JSONDecodeError:
-        return yaml.safe_load(txt)
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="openpylit")
+    subcommands = parser.add_subparsers(dest="command", required=True)
 
-
-def _load_spec_from_url(url: str, *, no_ssl: bool) -> Dict[str, Any]:
-    with httpx.Client(verify=not no_ssl, follow_redirects=True, timeout=30.0) as client:
-        r = client.get(url)
-        r.raise_for_status()
-        ctype = (r.headers.get("content-type") or "").lower()
-        text = r.text
-
-    if "yaml" in ctype or "yml" in ctype:
-        return yaml.safe_load(text)
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return yaml.safe_load(text)
+    generate = subcommands.add_parser(
+        "generate", help="Generate a typed client from an OpenAPI spec"
+    )
+    generate.add_argument("--spec", required=True, help="Path or URL to OpenAPI source")
+    generate.add_argument("--out", required=True, help="Output directory")
+    generate.add_argument(
+        "--package", default="my_client", help="Generated package name"
+    )
+    generate.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing generated files"
+    )
+    generate.add_argument(
+        "--no-ssl",
+        action="store_true",
+        help="Disable SSL certificate verification for URL specs",
+    )
+    generate.add_argument(
+        "--transport-mode",
+        choices=["default-runtime", "external-adapter"],
+        default="default-runtime",
+        help="Generation mode for transport integration",
+    )
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="sit-http")
-    sub = parser.add_subparsers(dest="cmd", required=True)
-
-    g = sub.add_parser("generate", help="Generate a typed client from an OpenAPI spec")
-    g.add_argument(
-        "--spec", required=True, help="Path or URL to the OpenAPI spec (.json/.yaml)"
-    )
-    g.add_argument(
-        "--out", required=True, help="Output directory for generated package"
-    )
-    g.add_argument(
-        "--package", default="api_client", help="Generated package name (module-safe)"
-    )
-    g.add_argument(
-        "--no-ssl",
-        action="store_true",
-        help="Ignore SSL certificate errors when fetching spec",
-    )
-
+    parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if args.cmd == "generate":
-        spec_src: str = args.spec
-        out_dir = Path(args.out)
-        pkg = args.package
+    if args.command != "generate":
+        parser.print_help()
+        return 2
 
-        parsed = urlparse(spec_src)
-        if parsed.scheme in ("http", "https"):
-            spec = _load_spec_from_url(spec_src, no_ssl=args.no_ssl)
-            generate_from_dict(spec, out_dir, pkg)
-        else:
-            p = Path(spec_src)
-            if not p.exists():
-                print(f"[sit-http] Spec file not found: {p}", file=sys.stderr)
-                return 2
+    request = GenerationRequest(
+        spec_source=args.spec,
+        output_dir=Path(args.out),
+        package_name=args.package,
+        overwrite=args.overwrite,
+        verify_ssl=not args.no_ssl,
+        transport_mode=args.transport_mode,
+    )
+    result = try_generate_client(request)
 
-            spec = _load_spec_from_path(p)
-            generate_from_dict(spec, out_dir, pkg)
+    if not result.success:
+        print(result.diagnostics[0], file=sys.stderr)
+        return 2
 
-        print(f"[sit-http] Generated client in {out_dir}/{pkg}")
-        return 0
-
-    return 1
+    print(
+        f"Generated {len(result.written_files)} files for package '{args.package}' "
+        f"({result.operations} operations, {result.type_definitions} type definitions)."
+    )
+    return 0
 
 
 if __name__ == "__main__":
