@@ -31,7 +31,9 @@ class OperationDef:
     params_type: str
     params_required: bool
     query_type: str
+    query_required: bool
     headers_type: str
+    headers_required: bool
     body_type: str | None
     body_required: bool
     response_type: str

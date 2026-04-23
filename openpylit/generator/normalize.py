@@ -103,6 +103,9 @@ class _TypeBuilder:
         if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
             return self.ensure_component(ref.rsplit("/", 1)[-1])
 
+        if "const" in schema:
+            return f"Literal[{schema['const']!r}]"
+
         if "enum" in schema and isinstance(schema["enum"], list):
             title = str(schema.get("title") or "")
             alias = _type_name_from_hint(hint)
@@ -128,6 +131,9 @@ class _TypeBuilder:
 
         schema_type = schema.get("type")
         nullable = bool(schema.get("nullable"))
+        if schema_type == "null":
+            return "None"
+
         if isinstance(schema_type, list):
             mapped = [
                 "None" if t == "null" else self._schema_to_type({"type": t}, hint)
@@ -339,7 +345,9 @@ def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
                     params_type=params_type,
                     params_required=bool(path_bucket.required),
                     query_type=query_type,
+                    query_required=bool(query_bucket.required),
                     headers_type=headers_type,
+                    headers_required=bool(header_bucket.required),
                     body_type=body_type,
                     body_required=body_required,
                     response_type=response_type,

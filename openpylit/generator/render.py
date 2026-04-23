@@ -63,6 +63,14 @@ def _call_signature(op: OperationDef, *, is_async: bool = False) -> str:
     if not op.params_required:
         params += " | None = None"
 
+    query = "query: " + op.query_type
+    if not op.query_required:
+        query += " | None = None"
+
+    headers = "headers: " + op.headers_type
+    if not op.headers_required:
+        headers += " | None = None"
+
     body = "body: object | None = None"
     if op.body_type:
         body = f"body: {op.body_type}"
@@ -73,8 +81,8 @@ def _call_signature(op: OperationDef, *, is_async: bool = False) -> str:
     signature = (
         f"{prefix} __call__(self, *, "
         f"{params}, "
-        f"query: {op.query_type} | None = None, "
-        f"headers: {op.headers_type} | None = None, "
+        f"{query}, "
+        f"{headers}, "
         f"{body}"
         f") -> {op.response_type}: ..."
     )
