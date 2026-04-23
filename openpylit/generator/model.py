@@ -23,6 +23,12 @@ class TypeAliasDef:
 
 
 @dataclass(frozen=True)
+class EnumDef:
+    name: str
+    values: tuple[object, ...]
+
+
+@dataclass(frozen=True)
 class OperationDef:
     method: str
     route_literal: str
@@ -44,6 +50,7 @@ class NormalizedSpec:
     package_name: str
     typed_dicts: tuple[TypedDictDef, ...]
     aliases: tuple[TypeAliasDef, ...]
+    enums: tuple[EnumDef, ...]
     operations: tuple[OperationDef, ...]
 
 

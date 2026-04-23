@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import keyword
+import re
 from pathlib import Path
 from string import Template
 
 from .extensions import GeneratorExtensions
 from .model import (
+    EnumDef,
     GeneratedArtifact,
     NormalizedSpec,
     OperationDef,
@@ -56,6 +59,32 @@ def _format_typeddict(defn: TypedDictDef) -> str:
 
 def _format_alias(alias: TypeAliasDef) -> str:
     return f"{alias.name}: TypeAlias = {alias.annotation}\n"
+
+
+def _enum_member_name(value: object) -> str:
+    text = str(value).upper()
+    text = re.sub(r"[^a-zA-Z0-9_]", "_", text).strip("_") or "VALUE"
+    text = re.sub(r"_+", "_", text)
+    if text[0].isdigit():
+        text = f"_{text}"
+    if keyword.iskeyword(text.lower()):
+        text = f"{text}_"
+    return text
+
+
+def _format_enum(defn: EnumDef) -> str:
+    lines = [f"class {defn.name}(str, Enum):"]
+    used: set[str] = set()
+    for value in defn.values:
+        name = _enum_member_name(value)
+        base_name = name
+        index = 2
+        while name in used:
+            name = f"{base_name}_{index}"
+            index += 1
+        used.add(name)
+        lines.append(f"    {name} = {value!r}")
+    return "\n".join(lines) + "\n"
 
 
 def _call_signature(op: OperationDef, *, is_async: bool = False) -> str:
@@ -159,9 +188,11 @@ def _fallback_method_block(
 
 
 def _render_types(spec: NormalizedSpec) -> str:
-    blocks = [_format_alias(alias) for alias in spec.aliases] + [
-        _format_typeddict(item) for item in spec.typed_dicts
-    ]
+    blocks = (
+        [_format_enum(item) for item in spec.enums]
+        + [_format_alias(alias) for alias in spec.aliases]
+        + [_format_typeddict(item) for item in spec.typed_dicts]
+    )
     return _load_template("types.py.tpl").substitute(
         type_blocks="\n".join(blocks).strip() + "\n"
     )

@@ -14,7 +14,7 @@ async def use_async_client() -> None:
     assert_type(article["status"], Status)
     assert_type(article["visibility"], ArticleVisibility)
 
-    body: ArticleUpdate = {"status": "archived", "visibility": "private"}
+    body: ArticleUpdate = {"status": Status.ARCHIVED, "visibility": "private"}
     assert_type(body["status"], Status)
     assert_type(body["visibility"], ArticleVisibility)
     updated = await async_client.patch("/articles/{article_id}")(

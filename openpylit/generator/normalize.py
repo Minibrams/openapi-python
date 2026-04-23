@@ -6,7 +6,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from .diagnostics import invalid_spec
-from .model import FieldDef, NormalizedSpec, OperationDef, TypeAliasDef, TypedDictDef
+from .model import (
+    EnumDef,
+    FieldDef,
+    NormalizedSpec,
+    OperationDef,
+    TypeAliasDef,
+    TypedDictDef,
+)
 
 _METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 _METHODS_UPPER = {method.upper() for method in _METHODS}
@@ -74,6 +81,7 @@ class _TypeBuilder:
         self.components = components
         self.typed_dicts: dict[str, TypedDictDef] = {}
         self.aliases: dict[str, TypeAliasDef] = {}
+        self.enums: dict[str, EnumDef] = {}
         self.aliases_by_signature: dict[tuple[tuple[str, ...], str], str] = {}
         self._processing: set[str] = set()
 
@@ -83,7 +91,20 @@ class _TypeBuilder:
         if schema is None:
             raise invalid_spec("Unresolved component schema reference", name)
         type_name = _pascal(name)
-        if type_name in self.typed_dicts or type_name in self.aliases:
+        if (
+            type_name in self.typed_dicts
+            or type_name in self.aliases
+            or type_name in self.enums
+        ):
+            return type_name
+        if (
+            schema.get("type") == "string"
+            and isinstance(schema.get("enum"), list)
+            and all(isinstance(value, str) for value in schema["enum"])
+        ):
+            self.enums[type_name] = EnumDef(
+                name=type_name, values=tuple(schema["enum"])
+            )
             return type_name
         self._schema_to_type(schema, type_name)
         return type_name
@@ -375,6 +396,7 @@ def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
         sorted(builder.typed_dicts.values(), key=lambda item: item.name)
     )
     aliases = tuple(sorted(builder.aliases.values(), key=lambda item: item.name))
+    enums = tuple(sorted(builder.enums.values(), key=lambda item: item.name))
     operations_tuple = tuple(
         sorted(operations, key=lambda item: (item.method, item.route_literal))
     )
@@ -382,5 +404,6 @@ def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
         package_name=package_name,
         typed_dicts=typed_dicts,
         aliases=aliases,
+        enums=enums,
         operations=operations_tuple,
     )

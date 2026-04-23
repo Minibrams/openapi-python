@@ -12,7 +12,7 @@ assert_type(article, Article)
 assert_type(article["status"], Status)
 assert_type(article["visibility"], ArticleVisibility)
 
-body: ArticleUpdate = {"status": "archived", "visibility": "private"}
+body: ArticleUpdate = {"status": Status.ARCHIVED, "visibility": "private"}
 assert_type(body["status"], Status)
 assert_type(body["visibility"], ArticleVisibility)
 updated = client.patch("/articles/{article_id}")(
