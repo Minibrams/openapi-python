@@ -3,6 +3,7 @@ from __future__ import annotations
 import keyword
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 from .diagnostics import invalid_spec
 from .model import FieldDef, NormalizedSpec, OperationDef, TypeAliasDef, TypedDictDef
@@ -213,6 +214,85 @@ def _merge_parameters(path_item: dict, operation: dict, components: dict) -> lis
     return params
 
 
+@dataclass
+class _ParameterBucket:
+    props: dict[str, dict] = field(default_factory=dict)
+    required: list[str] = field(default_factory=list)
+
+    def add(self, name: str, schema: dict, required: bool) -> None:
+        self.props[name] = schema
+        if required:
+            self.required.append(name)
+
+
+def _collect_parameter_buckets(
+    params: list[dict],
+) -> tuple[_ParameterBucket, _ParameterBucket, _ParameterBucket]:
+    path = _ParameterBucket()
+    query = _ParameterBucket()
+    headers = _ParameterBucket()
+    for param in params:
+        location = param.get("in")
+        name = str(param.get("name") or "")
+        if not name:
+            continue
+        schema = param.get("schema") or {}
+        if location == "path":
+            path.add(name, schema, bool(param.get("required", True)))
+        elif location == "query":
+            query.add(name, schema, bool(param.get("required", False)))
+        elif location == "header":
+            headers.add(name, schema, bool(param.get("required", False)))
+    return path, query, headers
+
+
+def _bucket_type(
+    builder: _TypeBuilder,
+    bucket: _ParameterBucket,
+    hint: str,
+    default: str = "dict[str, Any]",
+) -> str:
+    if not bucket.props:
+        return default
+    return builder.schema_type(
+        {
+            "type": "object",
+            "properties": bucket.props,
+            "required": bucket.required,
+        },
+        hint,
+    )
+
+
+def _request_body_type(
+    builder: _TypeBuilder,
+    operation: dict,
+    hint: str,
+) -> tuple[str | None, bool]:
+    request_body = operation.get("requestBody") or {}
+    if not isinstance(request_body, dict):
+        return None, False
+    content = request_body.get("content") or {}
+    json_content = content.get("application/json") or {}
+    schema = json_content.get("schema")
+    if not isinstance(schema, dict):
+        return None, False
+    return builder.schema_type(schema, hint), bool(request_body.get("required", False))
+
+
+def _response_type(builder: _TypeBuilder, operation: dict, hint: str) -> str:
+    responses = operation.get("responses") or {}
+    for code in sorted(responses.keys()):
+        if not code.startswith("2"):
+            continue
+        content = (responses.get(code) or {}).get("content") or {}
+        json_content = content.get("application/json") or {}
+        schema = json_content.get("schema")
+        if isinstance(schema, dict):
+            return builder.schema_type(schema, hint)
+    return "None"
+
+
 def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
     components = document.get("components") or {}
     builder = _TypeBuilder(components)
@@ -237,95 +317,18 @@ def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
             protocol_name = f"_{method.upper()}_{_pascal(symbol)}"
 
             params = _merge_parameters(path_item, operation, components)
-            path_props: dict[str, dict] = {}
-            query_props: dict[str, dict] = {}
-            header_props: dict[str, dict] = {}
-            path_required: list[str] = []
-            query_required: list[str] = []
-            header_required: list[str] = []
-            for param in params:
-                location = param.get("in")
-                name = str(param.get("name") or "")
-                if not name:
-                    continue
-                schema = param.get("schema") or {}
-                if location == "path":
-                    path_props[name] = schema
-                    if param.get("required", True):
-                        path_required.append(name)
-                elif location == "query":
-                    query_props[name] = schema
-                    if param.get("required", False):
-                        query_required.append(name)
-                elif location == "header":
-                    header_props[name] = schema
-                    if param.get("required", False):
-                        header_required.append(name)
+            path_bucket, query_bucket, header_bucket = _collect_parameter_buckets(
+                params
+            )
 
-            if path_props:
-                params_type = builder.schema_type(
-                    {
-                        "type": "object",
-                        "properties": path_props,
-                        "required": path_required,
-                    },
-                    f"{op_base}Params",
-                )
-            else:
-                params_type = "dict[str, Any]"
+            params_type = _bucket_type(builder, path_bucket, f"{op_base}Params")
+            query_type = _bucket_type(builder, query_bucket, f"{op_base}Query")
+            headers_type = _bucket_type(builder, header_bucket, f"{op_base}Headers")
 
-            if query_props:
-                query_type = builder.schema_type(
-                    {
-                        "type": "object",
-                        "properties": query_props,
-                        "required": query_required,
-                    },
-                    f"{op_base}Query",
-                )
-            else:
-                query_type = "dict[str, Any]"
-
-            if header_props:
-                headers_type = builder.schema_type(
-                    {
-                        "type": "object",
-                        "properties": header_props,
-                        "required": header_required,
-                    },
-                    f"{op_base}Headers",
-                )
-            else:
-                headers_type = "dict[str, Any]"
-
-            request_body = operation.get("requestBody") or {}
-            body_schema = None
-            if isinstance(request_body, dict):
-                content = request_body.get("content") or {}
-                json_content = content.get("application/json") or {}
-                body_schema = json_content.get("schema")
-
-            body_type = None
-            body_required = False
-            if isinstance(body_schema, dict):
-                body_type = builder.schema_type(body_schema, f"{op_base}Body")
-                body_required = bool(request_body.get("required", False))
-
-            responses = operation.get("responses") or {}
-            response_schema = None
-            for code in sorted(responses.keys()):
-                if code.startswith("2"):
-                    content = (responses.get(code) or {}).get("content") or {}
-                    json_content = content.get("application/json") or {}
-                    response_schema = json_content.get("schema")
-                    if response_schema:
-                        break
-
-            response_type = "None"
-            if isinstance(response_schema, dict):
-                response_type = builder.schema_type(
-                    response_schema, f"{op_base}Response"
-                )
+            body_type, body_required = _request_body_type(
+                builder, operation, f"{op_base}Body"
+            )
+            response_type = _response_type(builder, operation, f"{op_base}Response")
 
             operations.append(
                 OperationDef(
@@ -334,7 +337,7 @@ def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
                     symbol=symbol,
                     protocol_name=protocol_name,
                     params_type=params_type,
-                    params_required=bool(path_required),
+                    params_required=bool(path_bucket.required),
                     query_type=query_type,
                     headers_type=headers_type,
                     body_type=body_type,

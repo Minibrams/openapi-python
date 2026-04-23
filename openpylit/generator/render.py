@@ -61,6 +61,66 @@ def _call_signature(op: OperationDef) -> str:
     return signature
 
 
+def _protocol_block(op: OperationDef) -> str:
+    return "\n".join(
+        [
+            f"class {op.protocol_name}(Protocol):",
+            f"    {_call_signature(op)}",
+            "",
+        ]
+    )
+
+
+def _method_overload_line(op: OperationDef) -> str:
+    return (
+        "@overload\n"
+        f"def {op.method}(self, route: Literal[{op.route_literal!r}]) -> {op.protocol_name}: ..."
+    )
+
+
+def _method_dispatch_line(op: OperationDef) -> str:
+    return (
+        f"if route == {op.route_literal!r}:\n"
+        "            def _call(*, params=None, query=None, headers=None, body=None):\n"
+        "                return self._transport.request(\n"
+        f"                    method={op.method!r},\n"
+        f"                    route={op.route_literal!r},\n"
+        "                    base_url=self._base_url,\n"
+        "                    params=params,\n"
+        "                    query=query,\n"
+        "                    headers=headers,\n"
+        "                    body=body,\n"
+        "                )\n"
+        "            return _call"
+    )
+
+
+def _fallback_method_block(
+    method: str, overloads: list[str], dispatch: list[str]
+) -> str:
+    dispatch_block = "\n\n        ".join(dispatch)
+    return "\n".join(
+        [
+            "\n".join(overloads),
+            f"@overload\ndef {method}(self, route: str) -> Callable[..., object]: ...",
+            f"def {method}(self, route: str) -> Callable[..., object]:",
+            f"        {dispatch_block}",
+            "        def _call(*, params: dict[str, object] | None = None, query: dict[str, object] | None = None, headers: dict[str, object] | None = None, body: object | None = None) -> object:",
+            "            return self._transport.request(",
+            f"                method={method!r},",
+            "                route=route,",
+            "                base_url=self._base_url,",
+            "                params=params,",
+            "                query=query,",
+            "                headers=headers,",
+            "                body=body,",
+            "            )",
+            "        return _call",
+            "",
+        ]
+    )
+
+
 def _render_types(spec: NormalizedSpec) -> str:
     blocks = [_format_alias(alias) for alias in spec.aliases] + [
         _format_typeddict(item) for item in spec.typed_dicts
@@ -80,62 +140,17 @@ def _render_client(spec: NormalizedSpec) -> str:
     method_overloads: dict[str, list[str]] = {}
     method_dispatch: dict[str, list[str]] = {}
     for op in spec.operations:
-        proto_sig = _call_signature(op)
-        protocols.append(
-            "\n".join(
-                [
-                    f"class {op.protocol_name}(Protocol):",
-                    f"    {proto_sig}",
-                    "",
-                ]
-            )
-        )
-
-        method = op.method
-        method_overloads.setdefault(method, []).append(
-            f"@overload\ndef {method}(self, route: Literal[{op.route_literal!r}]) -> {op.protocol_name}: ..."
-        )
-
-        call_line = (
-            f"if route == {op.route_literal!r}:\n"
-            "            def _call(*, params=None, query=None, headers=None, body=None):\n"
-            "                return self._transport.request(\n"
-            f"                    method={op.method!r},\n"
-            f"                    route={op.route_literal!r},\n"
-            "                    base_url=self._base_url,\n"
-            "                    params=params,\n"
-            "                    query=query,\n"
-            "                    headers=headers,\n"
-            "                    body=body,\n"
-            "                )\n"
-            "            return _call"
-        )
-        method_dispatch.setdefault(method, []).append(call_line)
+        protocols.append(_protocol_block(op))
+        method_overloads.setdefault(op.method, []).append(_method_overload_line(op))
+        method_dispatch.setdefault(op.method, []).append(_method_dispatch_line(op))
 
     method_blocks: list[str] = []
     for method in sorted(method_overloads):
-        overloads = "\n".join(method_overloads[method])
-        dispatch = "\n\n        ".join(method_dispatch.get(method, []))
         method_blocks.append(
-            "\n".join(
-                [
-                    overloads,
-                    f"@overload\ndef {method}(self, route: str) -> Callable[..., object]: ...",
-                    f"def {method}(self, route: str) -> Callable[..., object]:",
-                    f"        {dispatch}",
-                    "        def _call(*, params: dict[str, object] | None = None, query: dict[str, object] | None = None, headers: dict[str, object] | None = None, body: object | None = None) -> object:",
-                    "            return self._transport.request(",
-                    f"                method={method!r},",
-                    "                route=route,",
-                    "                base_url=self._base_url,",
-                    "                params=params,",
-                    "                query=query,",
-                    "                headers=headers,",
-                    "                body=body,",
-                    "            )",
-                    "        return _call",
-                    "",
-                ]
+            _fallback_method_block(
+                method,
+                method_overloads[method],
+                method_dispatch.get(method, []),
             )
         )
 
