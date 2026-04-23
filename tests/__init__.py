@@ -1,1 +1,1 @@
-# Test package root.
+"""Static type-check test fixture."""

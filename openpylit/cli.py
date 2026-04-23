@@ -14,7 +14,9 @@ def _build_parser() -> argparse.ArgumentParser:
     generate = subcommands.add_parser(
         "generate", help="Generate a typed client from an OpenAPI spec"
     )
-    generate.add_argument("--spec", required=True, help="Path or URL to OpenAPI source")
+    spec_input = generate.add_mutually_exclusive_group(required=True)
+    spec_input.add_argument("--spec", help="Path or URL to OpenAPI source")
+    spec_input.add_argument("--spec-json", help="OpenAPI source as a JSON string")
     generate.add_argument("--out", required=True, help="Output directory")
     generate.add_argument(
         "--package", default="my_client", help="Generated package name"
@@ -45,8 +47,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     request = GenerationRequest(
-        spec_source=args.spec,
         output_dir=Path(args.out),
+        spec_source=args.spec,
+        spec_json=args.spec_json,
         package_name=args.package,
         overwrite=args.overwrite,
         verify_ssl=not args.no_ssl,

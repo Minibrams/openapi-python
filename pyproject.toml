@@ -19,6 +19,7 @@ requires-python = ">=3.9"
 dependencies = [
     "basedpyright>=1.39.3",
     "httpx>=0.28.1",
+    "openapi-python-client>=0.26.2",
 ]
 
 [project.scripts]

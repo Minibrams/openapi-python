@@ -1,26 +1,49 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from .diagnostics import GenerationError, invalid_extension, invalid_request
 from .extensions import GeneratorExtensions
-from .loader import load_openapi
+from .loader import load_openapi, load_openapi_json
 from .model import NormalizedSpec
 from .normalize import normalize_openapi
 from .render import render_package
 from .write import write_artifacts
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class GenerationRequest:
-    spec_source: str
+    spec_source: str | None = None
     output_dir: Path
     package_name: str = "my_client"
     overwrite: bool = False
     verify_ssl: bool = True
     transport_mode: str = "default-runtime"
     extensions: GeneratorExtensions | None = None
+    spec_json: str | None = None
+
+    def __init__(
+        self,
+        spec_source: str | None = None,
+        output_dir: Path | None = None,
+        package_name: str = "my_client",
+        overwrite: bool = False,
+        verify_ssl: bool = True,
+        transport_mode: str = "default-runtime",
+        extensions: GeneratorExtensions | None = None,
+        spec_json: str | None = None,
+    ) -> None:
+        if output_dir is None:
+            raise TypeError("GenerationRequest requires output_dir")
+        object.__setattr__(self, "spec_source", spec_source)
+        object.__setattr__(self, "output_dir", output_dir)
+        object.__setattr__(self, "package_name", package_name)
+        object.__setattr__(self, "overwrite", overwrite)
+        object.__setattr__(self, "verify_ssl", verify_ssl)
+        object.__setattr__(self, "transport_mode", transport_mode)
+        object.__setattr__(self, "extensions", extensions)
+        object.__setattr__(self, "spec_json", spec_json)
 
 
 @dataclass(frozen=True)
@@ -32,15 +55,9 @@ class GenerationResult:
     diagnostics: tuple[str, ...] = ()
 
 
-@dataclass
-class _GenerationContext:
-    normalized: NormalizedSpec
-    warnings: list[str] = field(default_factory=list)
-
-
 def generate_client(request: GenerationRequest) -> GenerationResult:
-    if not request.spec_source:
-        raise invalid_request("spec_source is required")
+    if bool(request.spec_source) == bool(request.spec_json):
+        raise invalid_request("Exactly one of spec_source or spec_json is required")
     if not request.package_name:
         raise invalid_request("package_name is required")
     if request.transport_mode not in {"default-runtime", "external-adapter"}:
@@ -48,7 +65,12 @@ def generate_client(request: GenerationRequest) -> GenerationResult:
             "transport_mode must be 'default-runtime' or 'external-adapter'"
         )
 
-    document = load_openapi(request.spec_source, verify_ssl=request.verify_ssl)
+    if request.spec_json is not None:
+        document = load_openapi_json(request.spec_json)
+    else:
+        document = load_openapi(
+            request.spec_source or "", verify_ssl=request.verify_ssl
+        )
     normalized = normalize_openapi(document, request.package_name)
 
     if request.extensions:

@@ -28,8 +28,28 @@ def _format_typeddict(defn: TypedDictDef) -> str:
     if not defn.fields:
         return f"class {defn.name}(TypedDict, total=False):\n    pass\n"
 
-    lines = [f"class {defn.name}(TypedDict, total=False):"]
-    for field in defn.fields:
+    required_fields = [field for field in defn.fields if field.required]
+    optional_fields = [field for field in defn.fields if not field.required]
+
+    if not required_fields:
+        lines = [f"class {defn.name}(TypedDict, total=False):"]
+        for field in optional_fields:
+            lines.append(f"    {field.name}: {field.annotation}")
+        return "\n".join(lines) + "\n"
+
+    if not optional_fields:
+        lines = [f"class {defn.name}(TypedDict):"]
+        for field in required_fields:
+            lines.append(f"    {field.name}: {field.annotation}")
+        return "\n".join(lines) + "\n"
+
+    optional_base = f"_{defn.name}Optional"
+    lines = [f"class {optional_base}(TypedDict, total=False):"]
+    for field in optional_fields:
+        lines.append(f"    {field.name}: {field.annotation}")
+    lines.append("")
+    lines.append(f"class {defn.name}({optional_base}):")
+    for field in required_fields:
         lines.append(f"    {field.name}: {field.annotation}")
     return "\n".join(lines) + "\n"
 
@@ -38,7 +58,7 @@ def _format_alias(alias: TypeAliasDef) -> str:
     return f"{alias.name}: TypeAlias = {alias.annotation}\n"
 
 
-def _call_signature(op: OperationDef) -> str:
+def _call_signature(op: OperationDef, *, is_async: bool = False) -> str:
     params = "params: " + op.params_type
     if not op.params_required:
         params += " | None = None"
@@ -49,8 +69,9 @@ def _call_signature(op: OperationDef) -> str:
         if not op.body_required:
             body += " | None = None"
 
+    prefix = "async def" if is_async else "def"
     signature = (
-        "def __call__(self, *, "
+        f"{prefix} __call__(self, *, "
         f"{params}, "
         f"query: {op.query_type} | None = None, "
         f"headers: {op.headers_type} | None = None, "
@@ -61,28 +82,32 @@ def _call_signature(op: OperationDef) -> str:
     return signature
 
 
-def _protocol_block(op: OperationDef) -> str:
+def _protocol_block(op: OperationDef, *, is_async: bool = False) -> str:
+    protocol_name = f"Async{op.protocol_name}" if is_async else op.protocol_name
     return "\n".join(
         [
-            f"class {op.protocol_name}(Protocol):",
-            f"    {_call_signature(op)}",
+            f"class {protocol_name}(Protocol):",
+            f"    {_call_signature(op, is_async=is_async)}",
             "",
         ]
     )
 
 
-def _method_overload_line(op: OperationDef) -> str:
+def _method_overload_line(op: OperationDef, *, is_async: bool = False) -> str:
+    protocol_name = f"Async{op.protocol_name}" if is_async else op.protocol_name
     return (
         "@overload\n"
-        f"def {op.method}(self, route: Literal[{op.route_literal!r}]) -> {op.protocol_name}: ..."
+        f"def {op.method}(self, route: Literal[{op.route_literal!r}]) -> {protocol_name}: ..."
     )
 
 
-def _method_dispatch_line(op: OperationDef) -> str:
+def _method_dispatch_line(op: OperationDef, *, is_async: bool = False) -> str:
+    call_prefix = "async " if is_async else ""
+    request_prefix = "await " if is_async else ""
     return (
         f"if route == {op.route_literal!r}:\n"
-        "            def _call(*, params=None, query=None, headers=None, body=None):\n"
-        "                return self._transport.request(\n"
+        f"            {call_prefix}def _call(*, params=None, query=None, headers=None, body=None):\n"
+        f"                return {request_prefix}self._transport.request(\n"
         f"                    method={op.method!r},\n"
         f"                    route={op.route_literal!r},\n"
         "                    base_url=self._base_url,\n"
@@ -96,17 +121,21 @@ def _method_dispatch_line(op: OperationDef) -> str:
 
 
 def _fallback_method_block(
-    method: str, overloads: list[str], dispatch: list[str]
+    method: str, overloads: list[str], dispatch: list[str], *, is_async: bool = False
 ) -> str:
     dispatch_block = "\n\n        ".join(dispatch)
+    callable_return = "Awaitable[Any]" if is_async else "object"
+    call_return = "Any" if is_async else "object"
+    call_prefix = "async " if is_async else ""
+    request_prefix = "await " if is_async else ""
     return "\n".join(
         [
             "\n".join(overloads),
-            f"@overload\ndef {method}(self, route: str) -> Callable[..., object]: ...",
-            f"def {method}(self, route: str) -> Callable[..., object]:",
+            f"@overload\ndef {method}(self, route: str) -> Callable[..., {callable_return}]: ...",
+            f"def {method}(self, route: str) -> Callable[..., {callable_return}]:",
             f"        {dispatch_block}",
-            "        def _call(*, params: dict[str, object] | None = None, query: dict[str, object] | None = None, headers: dict[str, object] | None = None, body: object | None = None) -> object:",
-            "            return self._transport.request(",
+            f"        {call_prefix}def _call(*, params: dict[str, object] | None = None, query: dict[str, object] | None = None, headers: dict[str, object] | None = None, body: object | None = None) -> {call_return}:",
+            f"            return {request_prefix}self._transport.request(",
             f"                method={method!r},",
             "                route=route,",
             "                base_url=self._base_url,",
@@ -137,12 +166,22 @@ def _render_transport(spec: NormalizedSpec) -> str:
 
 def _render_client(spec: NormalizedSpec) -> str:
     protocols: list[str] = []
+    async_protocols: list[str] = []
     method_overloads: dict[str, list[str]] = {}
+    async_method_overloads: dict[str, list[str]] = {}
     method_dispatch: dict[str, list[str]] = {}
+    async_method_dispatch: dict[str, list[str]] = {}
     for op in spec.operations:
         protocols.append(_protocol_block(op))
+        async_protocols.append(_protocol_block(op, is_async=True))
         method_overloads.setdefault(op.method, []).append(_method_overload_line(op))
+        async_method_overloads.setdefault(op.method, []).append(
+            _method_overload_line(op, is_async=True)
+        )
         method_dispatch.setdefault(op.method, []).append(_method_dispatch_line(op))
+        async_method_dispatch.setdefault(op.method, []).append(
+            _method_dispatch_line(op, is_async=True)
+        )
 
     method_blocks: list[str] = []
     for method in sorted(method_overloads):
@@ -153,10 +192,22 @@ def _render_client(spec: NormalizedSpec) -> str:
                 method_dispatch.get(method, []),
             )
         )
+    async_method_blocks: list[str] = []
+    for method in sorted(async_method_overloads):
+        async_method_blocks.append(
+            _fallback_method_block(
+                method,
+                async_method_overloads[method],
+                async_method_dispatch.get(method, []),
+                is_async=True,
+            )
+        )
 
     return _load_template("client.py.tpl").substitute(
         protocol_blocks="\n".join(protocols).strip() + "\n",
+        async_protocol_blocks="\n".join(async_protocols).strip() + "\n",
         method_blocks=_indent("\n".join(method_blocks).strip() + "\n"),
+        async_method_blocks=_indent("\n".join(async_method_blocks).strip() + "\n"),
     )
 
 
@@ -174,9 +225,16 @@ def render_package(
             context = hook(spec, context)
 
     init_content = (
-        "from .client import Client\n"
-        "from .transport import DefaultTransport, Transport\n\n"
-        "__all__ = ['Client', 'DefaultTransport', 'Transport']\n"
+        "from .client import AsyncClient, Client\n"
+        "from .transport import AsyncTransport, DefaultAsyncTransport, DefaultTransport, Transport\n\n"
+        "__all__ = [\n"
+        "    'AsyncClient',\n"
+        "    'AsyncTransport',\n"
+        "    'Client',\n"
+        "    'DefaultAsyncTransport',\n"
+        "    'DefaultTransport',\n"
+        "    'Transport',\n"
+        "]\n"
     )
 
     return [

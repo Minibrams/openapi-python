@@ -1,0 +1,12 @@
+{
+  "include": ["."],
+  "exclude": ["generated"],
+  "extraPaths": ["generated"],
+  "typeCheckingMode": "standard",
+  "reportMissingImports": true,
+  "reportUnusedVariable": true,
+  "reportOptionalSubscript": true,
+  "reportOptionalMemberAccess": true,
+  "reportOptionalCall": true,
+  "pythonVersion": "3.12"
+}

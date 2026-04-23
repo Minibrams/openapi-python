@@ -1,1 +1,0 @@
-Argument of type "BadAdapter" cannot be assigned

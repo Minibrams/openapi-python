@@ -41,6 +41,14 @@ def _parse_document(raw: str, source: str) -> dict:
     raise invalid_spec("Could not parse OpenAPI source as JSON or YAML", source)
 
 
+def _validate_openapi_document(document: dict, source: str) -> dict:
+    if "openapi" not in document:
+        raise invalid_spec("Missing required 'openapi' field", source)
+    if not isinstance(document.get("paths"), dict) or not document.get("paths"):
+        raise invalid_spec("Missing or empty 'paths' object", source)
+    return document
+
+
 def load_openapi(source: str, *, verify_ssl: bool = True) -> dict:
     parsed = urlparse(source)
     if parsed.scheme in {"http", "https"}:
@@ -52,8 +60,9 @@ def load_openapi(source: str, *, verify_ssl: bool = True) -> dict:
         raw = path.read_text(encoding="utf-8")
 
     document = _parse_document(raw, source)
-    if "openapi" not in document:
-        raise invalid_spec("Missing required 'openapi' field", source)
-    if not isinstance(document.get("paths"), dict) or not document.get("paths"):
-        raise invalid_spec("Missing or empty 'paths' object", source)
-    return document
+    return _validate_openapi_document(document, source)
+
+
+def load_openapi_json(raw: str, *, source: str = "<json string>") -> dict:
+    document = json.loads(raw)
+    return _validate_openapi_document(document, source)
