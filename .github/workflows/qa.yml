@@ -1,4 +1,4 @@
-name: Pre-commit
+name: QA
 
 on:
   pull_request:
@@ -7,8 +7,8 @@ on:
       - main
 
 jobs:
-  pre-commit:
-    name: Pre-commit checks
+  QA:
+    name: QA checks
     runs-on: ubuntu-latest
 
     steps:
@@ -32,8 +32,8 @@ jobs:
       - name: Check formatting
         run: uv run ruff format --check .
 
-      - name: Type check
-        run: uv run basedpyright .
+      - name: Type check package
+        run: uv run basedpyright -p pyproject.toml
 
       - name: Contract tests
         run: uv run pytest tests/test_contracts.py -n auto

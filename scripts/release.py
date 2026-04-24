@@ -106,7 +106,7 @@ def main() -> None:
 
     run(["uv", "run", "ruff", "check", "--select", "I", "."])
     run(["uv", "run", "ruff", "format", "--check", "."])
-    run(["uv", "run", "basedpyright", "."])
+    run(["uv", "run", "basedpyright", "-p", "pyproject.toml"])
     run(["uv", "run", "pytest", "tests/test_contracts.py", "-n", "auto"])
     run(["uv", "build"])
     run(["uv", "run", "twine", "check", *sorted(str(path) for path in dist.iterdir())])

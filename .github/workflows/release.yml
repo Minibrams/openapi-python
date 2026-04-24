@@ -73,8 +73,8 @@ jobs:
       - name: Check formatting
         run: uv run ruff format --check .
 
-      - name: Type check
-        run: uv run basedpyright .
+      - name: Type check package
+        run: uv run basedpyright -p pyproject.toml
 
       - name: Contract tests
         run: uv run pytest tests/test_contracts.py -n auto
