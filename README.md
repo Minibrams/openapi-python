@@ -1,30 +1,30 @@
-# openpylit
+# openapi-python
 
-`openpylit` generates strongly typed Python API clients from OpenAPI specs, with route-literal dispatch and transport decoupling.
+`openapi-python` generates strongly typed Python API clients from OpenAPI specs, with route-literal dispatch and transport decoupling.
 
 ## CLI
 
 ```bash
-uv run openpylit generate --spec ./openapi.json --out ./generated --package my_client
+uv run openapi-python generate --spec ./openapi.json --out ./generated --package my_client
 ```
 
 You can also pass the OpenAPI document directly as JSON:
 
 ```bash
-uv run openpylit generate --spec-json "$OPENAPI_JSON" --out ./generated --package my_client
+uv run openapi-python generate --spec-json "$OPENAPI_JSON" --out ./generated --package my_client
 ```
 
 For URL specs with self-signed certificates, disable verification explicitly:
 
 ```bash
-uv run openpylit generate --spec https://example.local/openapi.json --out ./generated --no-ssl
+uv run openapi-python generate --spec https://example.local/openapi.json --out ./generated --no-ssl
 ```
 
 ## Programmatic API
 
 ```python
 from pathlib import Path
-from openpylit import GenerationRequest, generate_client
+from openapi_python import GenerationRequest, generate_client
 
 result = generate_client(
     GenerationRequest(
@@ -43,7 +43,7 @@ To generate from an in-memory OpenAPI document, pass a JSON string instead of `s
 import json
 from pathlib import Path
 
-from openpylit import GenerationRequest, generate_client
+from openapi_python import GenerationRequest, generate_client
 
 result = generate_client(
     GenerationRequest(

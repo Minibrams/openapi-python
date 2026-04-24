@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app import app
 
-from openpylit.generator import GenerationRequest, generate_client
+from openapi_python.generator import GenerationRequest, generate_client
 
 
 def main() -> None:

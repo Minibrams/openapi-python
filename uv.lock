@@ -733,7 +733,7 @@ wheels = [
 ]
 
 [[package]]
-name = "openpylit"
+name = "openapi-python"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [

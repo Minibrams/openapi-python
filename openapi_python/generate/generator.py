@@ -1,12 +1,12 @@
 """Legacy compatibility shim.
 
-Use `openpylit.generator.generate_client` for new code.
+Use `openapi_python.generator.generate_client` for new code.
 """
 
 from pathlib import Path
 from typing import Any
 
-from openpylit.generator import GenerationRequest, generate_client
+from openapi_python.generator import GenerationRequest, generate_client
 
 
 def generate_from_dict(spec: dict[str, Any], out_dir: Path, package_name: str) -> None:

@@ -4,11 +4,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from openpylit.generator import GenerationRequest, try_generate_client
+from openapi_python.generator import GenerationRequest, try_generate_client
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="openpylit")
+    parser = argparse.ArgumentParser(prog="openapi-python")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     generate = subcommands.add_parser(

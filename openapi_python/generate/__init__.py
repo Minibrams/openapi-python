@@ -1,6 +1,6 @@
-"""Backward-compatible import surface for legacy openpylit.generate modules."""
+"""Backward-compatible import surface for openapi_python.generate modules."""
 
-from openpylit.generator import (
+from openapi_python.generator import (
     GenerationRequest,
     GenerationResult,
     generate_client,
