@@ -216,12 +216,138 @@ def _render_types(spec: NormalizedSpec) -> str:
     )
 
 
-def _render_transport(spec: NormalizedSpec) -> str:
+_HTTPX_TYPE_CHECKING_BLOCK = """if TYPE_CHECKING:
+    import httpx
+
+"""
+
+_DEFAULT_TRANSPORT_BLOCK = """
+class DefaultTransport:
+    def __init__(self, *, client: httpx.Client | None = None) -> None:
+        if client is None:
+            import httpx
+
+            client = httpx.Client()
+        self._client = client
+
+    def request(
+        self,
+        *,
+        method: str,
+        route: str,
+        base_url: str,
+        params: Mapping[str, object] | None,
+        query: Mapping[str, object] | None,
+        headers: Mapping[str, object] | None,
+        body: object | None,
+    ) -> object:
+        formatted_route = route.format(**(params or {}))
+        query_dict = {key: str(value) for key, value in (query or {}).items()}
+        header_dict = {key: str(value) for key, value in (headers or {}).items()}
+        request_kwargs: dict[str, object] = {"json": body}
+        if isinstance(body, Mapping) and any(
+            isinstance(value, (bytes, bytearray)) for value in body.values()
+        ):
+            request_kwargs = {
+                "data": {
+                    key: str(value)
+                    for key, value in body.items()
+                    if not isinstance(value, (bytes, bytearray))
+                }
+                or None,
+                "files": {
+                    key: (key, bytes(value))
+                    for key, value in body.items()
+                    if isinstance(value, (bytes, bytearray))
+                }
+                or None,
+            }
+        response = self._client.request(
+            method=method.upper(),
+            url=f"{base_url.rstrip('/')}{formatted_route}",
+            params=query_dict or None,
+            headers=header_dict or None,
+            **request_kwargs,
+        )
+        response.raise_for_status()
+        if response.content:
+            return response.json()
+        return None
+
+
+class DefaultAsyncTransport:
+    def __init__(self, *, client: httpx.AsyncClient | None = None) -> None:
+        if client is None:
+            import httpx
+
+            client = httpx.AsyncClient()
+        self._client = client
+
+    async def request(
+        self,
+        *,
+        method: str,
+        route: str,
+        base_url: str,
+        params: Mapping[str, object] | None,
+        query: Mapping[str, object] | None,
+        headers: Mapping[str, object] | None,
+        body: object | None,
+    ) -> object:
+        formatted_route = route.format(**(params or {}))
+        query_dict = {key: str(value) for key, value in (query or {}).items()}
+        header_dict = {key: str(value) for key, value in (headers or {}).items()}
+        request_kwargs: dict[str, object] = {"json": body}
+        if isinstance(body, Mapping) and any(
+            isinstance(value, (bytes, bytearray)) for value in body.values()
+        ):
+            request_kwargs = {
+                "data": {
+                    key: str(value)
+                    for key, value in body.items()
+                    if not isinstance(value, (bytes, bytearray))
+                }
+                or None,
+                "files": {
+                    key: (key, bytes(value))
+                    for key, value in body.items()
+                    if isinstance(value, (bytes, bytearray))
+                }
+                or None,
+            }
+        response = await self._client.request(
+            method=method.upper(),
+            url=f"{base_url.rstrip('/')}{formatted_route}",
+            params=query_dict or None,
+            headers=header_dict or None,
+            **request_kwargs,
+        )
+        response.raise_for_status()
+        if response.content:
+            return response.json()
+        return None
+"""
+
+
+def _render_transport(spec: NormalizedSpec, *, transport_mode: str) -> str:
     routes = "\n".join(f"    {op.route_literal!r}," for op in spec.operations)
-    return _load_template("transport.py.tpl").substitute(route_literals=routes)
+    return _load_template("transport.py.tpl").substitute(
+        route_literals=routes,
+        typing_imports=(
+            "TYPE_CHECKING, Literal, Protocol"
+            if transport_mode == "default-runtime"
+            else "Literal, Protocol"
+        ),
+        httpx_type_checking=(
+            _HTTPX_TYPE_CHECKING_BLOCK if transport_mode == "default-runtime" else ""
+        ),
+        default_transport_block=(
+            _DEFAULT_TRANSPORT_BLOCK if transport_mode == "default-runtime" else ""
+        ),
+    )
 
 
-def _render_client(spec: NormalizedSpec) -> str:
+def _render_client(spec: NormalizedSpec, *, transport_mode: str) -> str:
     protocols: list[str] = []
     async_protocols: list[str] = []
     method_overloads: dict[str, list[str]] = {}
@@ -260,7 +386,28 @@ def _render_client(spec: NormalizedSpec) -> str:
             )
         )
 
+    if transport_mode == "default-runtime":
+        transport_imports = (
+            "from .transport import AsyncTransport, DefaultAsyncTransport, "
+            "DefaultTransport, Transport"
+        )
+        sync_transport_type = "Transport | None = None"
+        sync_transport_assignment = "transport or DefaultTransport()"
+        async_transport_type = "AsyncTransport | None = None"
+        async_transport_assignment = "transport or DefaultAsyncTransport()"
+    else:
+        transport_imports = "from .transport import AsyncTransport, Transport"
+        sync_transport_type = "Transport"
+        sync_transport_assignment = "transport"
+        async_transport_type = "AsyncTransport"
+        async_transport_assignment = "transport"
+
     return _load_template("client.py.tpl").substitute(
+        transport_imports=transport_imports,
+        sync_transport_type=sync_transport_type,
+        sync_transport_assignment=sync_transport_assignment,
+        async_transport_type=async_transport_type,
+        async_transport_assignment=async_transport_assignment,
         protocol_blocks="\n".join(protocols).strip() + "\n",
         async_protocol_blocks="\n".join(async_protocols).strip() + "\n",
         method_blocks=_indent("\n".join(method_blocks).strip() + "\n"),
@@ -269,30 +416,45 @@ def _render_client(spec: NormalizedSpec) -> str:
 
 
 def render_package(
-    spec: NormalizedSpec, extensions: GeneratorExtensions | None = None
+    spec: NormalizedSpec,
+    extensions: GeneratorExtensions | None = None,
+    *,
+    transport_mode: str = "default-runtime",
 ) -> list[GeneratedArtifact]:
     context = {
         "types": _render_types(spec),
-        "transport": _render_transport(spec),
-        "client": _render_client(spec),
+        "transport": _render_transport(spec, transport_mode=transport_mode),
+        "client": _render_client(spec, transport_mode=transport_mode),
     }
 
     if extensions:
         for hook in extensions.render_context_hooks:
             context = hook(spec, context)
 
-    init_content = (
-        "from .client import AsyncClient, Client\n"
-        "from .transport import AsyncTransport, DefaultAsyncTransport, DefaultTransport, Transport\n\n"
-        "__all__ = [\n"
-        "    'AsyncClient',\n"
-        "    'AsyncTransport',\n"
-        "    'Client',\n"
-        "    'DefaultAsyncTransport',\n"
-        "    'DefaultTransport',\n"
-        "    'Transport',\n"
-        "]\n"
-    )
+    if transport_mode == "default-runtime":
+        init_content = (
+            "from .client import AsyncClient, Client\n"
+            "from .transport import AsyncTransport, DefaultAsyncTransport, DefaultTransport, Transport\n\n"
+            "__all__ = [\n"
+            "    'AsyncClient',\n"
+            "    'AsyncTransport',\n"
+            "    'Client',\n"
+            "    'DefaultAsyncTransport',\n"
+            "    'DefaultTransport',\n"
+            "    'Transport',\n"
+            "]\n"
+        )
+    else:
+        init_content = (
+            "from .client import AsyncClient, Client\n"
+            "from .transport import AsyncTransport, Transport\n\n"
+            "__all__ = [\n"
+            "    'AsyncClient',\n"
+            "    'AsyncTransport',\n"
+            "    'Client',\n"
+            "    'Transport',\n"
+            "]\n"
+        )
 
     return [
         GeneratedArtifact(

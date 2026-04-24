@@ -60,9 +60,9 @@ def generate_client(request: GenerationRequest) -> GenerationResult:
         raise invalid_request("Exactly one of spec_source or spec_json is required")
     if not request.package_name:
         raise invalid_request("package_name is required")
-    if request.transport_mode not in {"default-runtime", "external-adapter"}:
+    if request.transport_mode not in {"default-runtime", "protocol-only"}:
         raise invalid_request(
-            "transport_mode must be 'default-runtime' or 'external-adapter'"
+            "transport_mode must be 'default-runtime' or 'protocol-only'"
         )
 
     if request.spec_json is not None:
@@ -80,7 +80,9 @@ def generate_client(request: GenerationRequest) -> GenerationResult:
                 raise invalid_extension("normalize hook must return NormalizedSpec")
             normalized = candidate
 
-    artifacts = render_package(normalized, request.extensions)
+    artifacts = render_package(
+        normalized, request.extensions, transport_mode=request.transport_mode
+    )
     written = write_artifacts(
         output_dir=request.output_dir, artifacts=artifacts, overwrite=request.overwrite
     )

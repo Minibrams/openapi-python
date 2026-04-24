@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
-import httpx
+if TYPE_CHECKING:
+    import httpx
 
 
 class RuntimeDefaultTransport:
-    def __init__(self, *, timeout: float = 30.0) -> None:
-        self._client = httpx.Client(timeout=timeout)
+    def __init__(self, *, client: httpx.Client | None = None) -> None:
+        if client is None:
+            import httpx
+
+            client = httpx.Client()
+        self._client = client
 
     def request(
         self,
