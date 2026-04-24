@@ -3,11 +3,13 @@ from __future__ import annotations
 import keyword
 import re
 from pathlib import Path
-from string import Template
+
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from .extensions import GeneratorExtensions
 from .model import (
     EnumDef,
+    FieldDef,
     GeneratedArtifact,
     NormalizedSpec,
     OperationDef,
@@ -15,11 +17,30 @@ from .model import (
     TypedDictDef,
 )
 
+
+def _field_annotation(field: FieldDef) -> str:
+    """
+    Jinja2 filter to format a FieldDef's annotation.
+    """
+    annotation = repr(field.annotation)
+    if not field.required:
+        annotation = f"NotRequired[{annotation}]"
+    return annotation
+
+
 _TEMPLATE_DIR = Path(__file__).with_name("templates")
+_JINJA_ENV = Environment(
+    loader=FileSystemLoader(_TEMPLATE_DIR),
+    trim_blocks=True,
+    lstrip_blocks=True,
+    undefined=StrictUndefined,
+)
+_JINJA_ENV.filters["repr"] = repr
+_JINJA_ENV.filters["field_annotation"] = _field_annotation
 
 
-def _load_template(name: str) -> Template:
-    return Template((_TEMPLATE_DIR / name).read_text(encoding="utf-8"))
+def _render_template(name: str, **context: object) -> str:
+    return _JINJA_ENV.get_template(name).render(**context)
 
 
 def _indent(text: str, spaces: int = 4) -> str:
@@ -28,21 +49,11 @@ def _indent(text: str, spaces: int = 4) -> str:
 
 
 def _format_typeddict(defn: TypedDictDef) -> str:
-    if not defn.fields:
-        return f"{defn.name} = TypedDict({defn.name!r}, {{}})\n"
-
-    lines = [f"{defn.name} = TypedDict(", f"    {defn.name!r},", "    {"]
-    for field in defn.fields:
-        annotation = repr(field.annotation)
-        if not field.required:
-            annotation = f"NotRequired[{annotation}]"
-        lines.append(f"        {field.name!r}: {annotation},")
-    lines.extend(["    },", ")"])
-    return "\n".join(lines) + "\n"
+    return _render_template("typeddict.py.j2", defn=defn)
 
 
 def _format_alias(alias: TypeAliasDef) -> str:
-    return f"{alias.name}: TypeAlias = {alias.annotation}\n"
+    return _render_template("alias.py.j2", alias=alias)
 
 
 def _enum_member_name(value: object) -> str:
@@ -56,8 +67,18 @@ def _enum_member_name(value: object) -> str:
     return text
 
 
+def _enum_base(defn: EnumDef) -> str:
+    if all(isinstance(value, str) for value in defn.values):
+        return "str, Enum"
+    if all(
+        isinstance(value, int) and not isinstance(value, bool) for value in defn.values
+    ):
+        return "int, Enum"
+    return "Enum"
+
+
 def _format_enum(defn: EnumDef) -> str:
-    lines = [f"class {defn.name}(str, Enum):"]
+    members: list[tuple[str, object]] = []
     used: set[str] = set()
     for value in defn.values:
         name = _enum_member_name(value)
@@ -67,8 +88,13 @@ def _format_enum(defn: EnumDef) -> str:
             name = f"{base_name}_{index}"
             index += 1
         used.add(name)
-        lines.append(f"    {name} = {value!r}")
-    return "\n".join(lines) + "\n"
+        members.append((name, value))
+    return _render_template(
+        "enum.py.j2",
+        defn=defn,
+        enum_base=_enum_base(defn),
+        members=members,
+    )
 
 
 def _typed_dict_dependencies(defn: TypedDictDef, names: set[str]) -> set[str]:
@@ -105,7 +131,7 @@ def _order_typeddicts(defns: tuple[TypedDictDef, ...]) -> list[TypedDictDef]:
     return ordered
 
 
-def _call_signature(op: OperationDef, *, is_async: bool = False) -> str:
+def _call_parameters(op: OperationDef) -> dict[str, str]:
     params = "params: " + op.params_type
     if not op.params_required:
         params += " | None = None"
@@ -124,84 +150,55 @@ def _call_signature(op: OperationDef, *, is_async: bool = False) -> str:
         if not op.body_required:
             body += " | None = None"
 
-    prefix = "async def" if is_async else "def"
-    signature = (
-        f"{prefix} __call__(self, *, "
-        f"{params}, "
-        f"{query}, "
-        f"{headers}, "
-        f"{body}"
-        f") -> {op.response_type}: ..."
-    )
+    return {
+        "params": params,
+        "query": query,
+        "headers": headers,
+        "body": body,
+    }
 
-    return signature
+
+def _protocol_name(op: OperationDef, *, is_async: bool = False) -> str:
+    return f"Async{op.protocol_name}" if is_async else op.protocol_name
 
 
 def _protocol_block(op: OperationDef, *, is_async: bool = False) -> str:
-    protocol_name = f"Async{op.protocol_name}" if is_async else op.protocol_name
-    return "\n".join(
-        [
-            f"class {protocol_name}(Protocol):",
-            f"    {_call_signature(op, is_async=is_async)}",
-            "",
-        ]
+    return _render_template(
+        "protocol.py.j2",
+        op=op,
+        is_async=is_async,
+        protocol_name=_protocol_name(op, is_async=is_async),
+        call_parameters=_call_parameters(op),
     )
 
 
 def _method_overload_line(op: OperationDef, *, is_async: bool = False) -> str:
-    protocol_name = f"Async{op.protocol_name}" if is_async else op.protocol_name
-    return (
-        "@overload\n"
-        f"def {op.method}(self, route: Literal[{op.route_literal!r}]) -> {protocol_name}: ..."
+    return _render_template(
+        "method_overload.py.j2",
+        op=op,
+        protocol_name=_protocol_name(op, is_async=is_async),
     )
 
 
 def _method_dispatch_line(op: OperationDef, *, is_async: bool = False) -> str:
-    call_prefix = "async " if is_async else ""
-    request_prefix = "await " if is_async else ""
-    return (
-        f"if route == {op.route_literal!r}:\n"
-        f"            {call_prefix}def _call(*, params=None, query=None, headers=None, body=None):\n"
-        f"                return {request_prefix}self._transport.request(\n"
-        f"                    method={op.method!r},\n"
-        f"                    route={op.route_literal!r},\n"
-        "                    base_url=self._base_url,\n"
-        "                    params=params,\n"
-        "                    query=query,\n"
-        "                    headers=headers,\n"
-        "                    body=body,\n"
-        "                )\n"
-        "            return _call"
+    return _render_template(
+        "method_dispatch.py.j2",
+        op=op,
+        is_async=is_async,
     )
 
 
 def _fallback_method_block(
     method: str, overloads: list[str], dispatch: list[str], *, is_async: bool = False
 ) -> str:
-    dispatch_block = "\n\n        ".join(dispatch)
-    callable_return = "Awaitable[Any]" if is_async else "object"
-    call_return = "Any" if is_async else "object"
-    call_prefix = "async " if is_async else ""
-    request_prefix = "await " if is_async else ""
-    return "\n".join(
-        [
-            "\n".join(overloads),
-            f"@overload\ndef {method}(self, route: str) -> Callable[..., {callable_return}]: ...",
-            f"def {method}(self, route: str) -> Callable[..., {callable_return}]:",
-            f"        {dispatch_block}",
-            f"        {call_prefix}def _call(*, params: dict[str, object] | None = None, query: dict[str, object] | None = None, headers: dict[str, object] | None = None, body: object | None = None) -> {call_return}:",
-            f"            return {request_prefix}self._transport.request(",
-            f"                method={method!r},",
-            "                route=route,",
-            "                base_url=self._base_url,",
-            "                params=params,",
-            "                query=query,",
-            "                headers=headers,",
-            "                body=body,",
-            "            )",
-            "        return _call",
-            "",
-        ]
+    return _render_template(
+        "method_block.py.j2",
+        method=method,
+        overloads="\n".join(overloads),
+        dispatch_block="\n\n        ".join(dispatch),
+        callable_return="Awaitable[Any]" if is_async else "object",
+        call_return="Any" if is_async else "object",
+        is_async=is_async,
     )
 
 
@@ -211,139 +208,22 @@ def _render_types(spec: NormalizedSpec) -> str:
         + [_format_alias(alias) for alias in spec.aliases]
         + [_format_typeddict(item) for item in _order_typeddicts(spec.typed_dicts)]
     )
-    return _load_template("types.py.tpl").substitute(
-        type_blocks="\n".join(blocks).strip() + "\n"
+    return _render_template(
+        "types.py.j2",
+        type_blocks="\n".join(blocks).strip() + "\n",
     )
 
 
-_HTTPX_TYPE_CHECKING_BLOCK = """if TYPE_CHECKING:
-    import httpx
-
-"""
-
-_DEFAULT_TRANSPORT_BLOCK = """
-class DefaultTransport:
-    def __init__(self, *, client: httpx.Client | None = None) -> None:
-        if client is None:
-            import httpx
-
-            client = httpx.Client()
-        self._client = client
-
-    def request(
-        self,
-        *,
-        method: str,
-        route: str,
-        base_url: str,
-        params: Mapping[str, object] | None,
-        query: Mapping[str, object] | None,
-        headers: Mapping[str, object] | None,
-        body: object | None,
-    ) -> object:
-        formatted_route = route.format(**(params or {}))
-        query_dict = {key: str(value) for key, value in (query or {}).items()}
-        header_dict = {key: str(value) for key, value in (headers or {}).items()}
-        request_kwargs: dict[str, object] = {"json": body}
-        if isinstance(body, Mapping) and any(
-            isinstance(value, (bytes, bytearray)) for value in body.values()
-        ):
-            request_kwargs = {
-                "data": {
-                    key: str(value)
-                    for key, value in body.items()
-                    if not isinstance(value, (bytes, bytearray))
-                }
-                or None,
-                "files": {
-                    key: (key, bytes(value))
-                    for key, value in body.items()
-                    if isinstance(value, (bytes, bytearray))
-                }
-                or None,
-            }
-        response = self._client.request(
-            method=method.upper(),
-            url=f"{base_url.rstrip('/')}{formatted_route}",
-            params=query_dict or None,
-            headers=header_dict or None,
-            **request_kwargs,
-        )
-        response.raise_for_status()
-        if response.content:
-            return response.json()
-        return None
-
-
-class DefaultAsyncTransport:
-    def __init__(self, *, client: httpx.AsyncClient | None = None) -> None:
-        if client is None:
-            import httpx
-
-            client = httpx.AsyncClient()
-        self._client = client
-
-    async def request(
-        self,
-        *,
-        method: str,
-        route: str,
-        base_url: str,
-        params: Mapping[str, object] | None,
-        query: Mapping[str, object] | None,
-        headers: Mapping[str, object] | None,
-        body: object | None,
-    ) -> object:
-        formatted_route = route.format(**(params or {}))
-        query_dict = {key: str(value) for key, value in (query or {}).items()}
-        header_dict = {key: str(value) for key, value in (headers or {}).items()}
-        request_kwargs: dict[str, object] = {"json": body}
-        if isinstance(body, Mapping) and any(
-            isinstance(value, (bytes, bytearray)) for value in body.values()
-        ):
-            request_kwargs = {
-                "data": {
-                    key: str(value)
-                    for key, value in body.items()
-                    if not isinstance(value, (bytes, bytearray))
-                }
-                or None,
-                "files": {
-                    key: (key, bytes(value))
-                    for key, value in body.items()
-                    if isinstance(value, (bytes, bytearray))
-                }
-                or None,
-            }
-        response = await self._client.request(
-            method=method.upper(),
-            url=f"{base_url.rstrip('/')}{formatted_route}",
-            params=query_dict or None,
-            headers=header_dict or None,
-            **request_kwargs,
-        )
-        response.raise_for_status()
-        if response.content:
-            return response.json()
-        return None
-"""
-
-
 def _render_transport(spec: NormalizedSpec, *, transport_mode: str) -> str:
-    routes = "\n".join(f"    {op.route_literal!r}," for op in spec.operations)
-    return _load_template("transport.py.tpl").substitute(
-        route_literals=routes,
+    return _render_template(
+        "transport.py.j2",
+        route_literals=[op.route_literal for op in spec.operations],
         typing_imports=(
             "TYPE_CHECKING, Literal, Protocol"
-            if transport_mode == "default-runtime"
+            if transport_mode == "default"
             else "Literal, Protocol"
         ),
-        httpx_type_checking=(
-            _HTTPX_TYPE_CHECKING_BLOCK if transport_mode == "default-runtime" else ""
-        ),
-        default_transport_block=(
-            _DEFAULT_TRANSPORT_BLOCK if transport_mode == "default-runtime" else ""
-        ),
+        include_default_transport=transport_mode == "default",
     )
 
 
@@ -386,7 +266,7 @@ def _render_client(spec: NormalizedSpec, *, transport_mode: str) -> str:
             )
         )
 
-    if transport_mode == "default-runtime":
+    if transport_mode == "default":
         transport_imports = (
             "from .transport import AsyncTransport, DefaultAsyncTransport, "
             "DefaultTransport, Transport"
@@ -402,7 +282,8 @@ def _render_client(spec: NormalizedSpec, *, transport_mode: str) -> str:
         async_transport_type = "AsyncTransport"
         async_transport_assignment = "transport"
 
-    return _load_template("client.py.tpl").substitute(
+    return _render_template(
+        "client.py.j2",
         transport_imports=transport_imports,
         sync_transport_type=sync_transport_type,
         sync_transport_assignment=sync_transport_assignment,
@@ -419,7 +300,7 @@ def render_package(
     spec: NormalizedSpec,
     extensions: GeneratorExtensions | None = None,
     *,
-    transport_mode: str = "default-runtime",
+    transport_mode: str = "default",
 ) -> list[GeneratedArtifact]:
     context = {
         "types": _render_types(spec),
@@ -431,30 +312,9 @@ def render_package(
         for hook in extensions.render_context_hooks:
             context = hook(spec, context)
 
-    if transport_mode == "default-runtime":
-        init_content = (
-            "from .client import AsyncClient, Client\n"
-            "from .transport import AsyncTransport, DefaultAsyncTransport, DefaultTransport, Transport\n\n"
-            "__all__ = [\n"
-            "    'AsyncClient',\n"
-            "    'AsyncTransport',\n"
-            "    'Client',\n"
-            "    'DefaultAsyncTransport',\n"
-            "    'DefaultTransport',\n"
-            "    'Transport',\n"
-            "]\n"
-        )
-    else:
-        init_content = (
-            "from .client import AsyncClient, Client\n"
-            "from .transport import AsyncTransport, Transport\n\n"
-            "__all__ = [\n"
-            "    'AsyncClient',\n"
-            "    'AsyncTransport',\n"
-            "    'Client',\n"
-            "    'Transport',\n"
-            "]\n"
-        )
+    init_content = _render_template(
+        "init.py.j2", include_default_transport=transport_mode == "default"
+    )
 
     return [
         GeneratedArtifact(

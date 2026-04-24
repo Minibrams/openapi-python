@@ -12,38 +12,16 @@ from .render import render_package
 from .write import write_artifacts
 
 
-@dataclass(frozen=True, init=False)
+@dataclass(frozen=True)
 class GenerationRequest:
-    spec_source: str | None = None
     output_dir: Path
+    spec_source: str | None = None
     package_name: str = "my_client"
     overwrite: bool = False
     verify_ssl: bool = True
-    transport_mode: str = "default-runtime"
+    transport_mode: str = "default"
     extensions: GeneratorExtensions | None = None
     spec_json: str | None = None
-
-    def __init__(
-        self,
-        spec_source: str | None = None,
-        output_dir: Path | None = None,
-        package_name: str = "my_client",
-        overwrite: bool = False,
-        verify_ssl: bool = True,
-        transport_mode: str = "default-runtime",
-        extensions: GeneratorExtensions | None = None,
-        spec_json: str | None = None,
-    ) -> None:
-        if output_dir is None:
-            raise TypeError("GenerationRequest requires output_dir")
-        object.__setattr__(self, "spec_source", spec_source)
-        object.__setattr__(self, "output_dir", output_dir)
-        object.__setattr__(self, "package_name", package_name)
-        object.__setattr__(self, "overwrite", overwrite)
-        object.__setattr__(self, "verify_ssl", verify_ssl)
-        object.__setattr__(self, "transport_mode", transport_mode)
-        object.__setattr__(self, "extensions", extensions)
-        object.__setattr__(self, "spec_json", spec_json)
 
 
 @dataclass(frozen=True)
@@ -60,10 +38,8 @@ def generate_client(request: GenerationRequest) -> GenerationResult:
         raise invalid_request("Exactly one of spec_source or spec_json is required")
     if not request.package_name:
         raise invalid_request("package_name is required")
-    if request.transport_mode not in {"default-runtime", "protocol-only"}:
-        raise invalid_request(
-            "transport_mode must be 'default-runtime' or 'protocol-only'"
-        )
+    if request.transport_mode not in {"default", "protocol-only"}:
+        raise invalid_request("transport_mode must be 'default' or 'protocol-only'")
 
     if request.spec_json is not None:
         document = load_openapi_json(request.spec_json)

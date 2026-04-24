@@ -1,0 +1,16 @@
+{{ overloads }}
+@overload
+def {{ method }}(self, route: str) -> Callable[..., {{ callable_return }}]: ...
+def {{ method }}(self, route: str) -> Callable[..., {{ callable_return }}]:
+        {{ dispatch_block }}
+        {{ "async " if is_async else "" }}def _call(*, params: dict[str, object] | None = None, query: dict[str, object] | None = None, headers: dict[str, object] | None = None, body: object | None = None) -> {{ call_return }}:
+            return {{ "await " if is_async else "" }}self._transport.request(
+                method={{ method|repr }},
+                route=route,
+                base_url=self._base_url,
+                params=params,
+                query=query,
+                headers=headers,
+                body=body,
+            )
+        return _call

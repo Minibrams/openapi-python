@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import $typing_imports
+from typing import {{ typing_imports }}
 
-$httpx_type_checking
+{% if include_default_transport %}
+if TYPE_CHECKING:
+    import httpx
+
+{% endif %}
 RouteLiteral = Literal[
-$route_literals
+{% for route_literal in route_literals %}
+    {{ route_literal|repr }},
+{% endfor %}
 ]
 
 
@@ -36,4 +42,6 @@ class AsyncTransport(Protocol):
         body: object | None,
     ) -> object: ...
 
-$default_transport_block
+{% if include_default_transport %}
+{% include "default_transport.py.j2" %}
+{% endif %}

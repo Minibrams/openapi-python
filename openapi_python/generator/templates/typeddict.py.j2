@@ -1,0 +1,12 @@
+{% if not defn.fields -%}
+{{ defn.name }} = TypedDict({{ defn.name | repr }}, {})
+{% else -%}
+{{ defn.name }} = TypedDict(
+    {{ defn.name | repr }},
+    {
+{% for field in defn.fields %}
+        {{ field.name | repr }}: {{ field | field_annotation }},
+{% endfor %}
+    },
+)
+{% endif -%}

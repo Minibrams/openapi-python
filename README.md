@@ -84,7 +84,7 @@ book = client.get("/books/{book_id}")(params={"book_id": 1})
 
 Generated clients expose a transport protocol. You can plug in your own transport while keeping route-level typing guarantees.
 
-Use `--transport-mode protocol-only` to generate clients that require a supplied transport and do not emit the built-in `httpx` transport classes. The default `--transport-mode default-runtime` includes `DefaultTransport` and `DefaultAsyncTransport`, which require the `httpx` extra when instantiated.
+Use `--transport-mode protocol-only` to generate clients that require a supplied transport and do not emit the built-in `httpx` transport classes. The default `--transport-mode default` includes `DefaultTransport` and `DefaultAsyncTransport`, which require the `httpx` extra when instantiated.
 
 ### Built-in `httpx` transport
 

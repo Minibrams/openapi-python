@@ -31,8 +31,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     generate.add_argument(
         "--transport-mode",
-        choices=["default-runtime", "protocol-only"],
-        default="default-runtime",
+        choices=["default", "protocol-only"],
+        default="default",
         help="Generation mode for transport integration",
     )
     return parser

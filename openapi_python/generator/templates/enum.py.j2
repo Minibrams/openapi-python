@@ -1,0 +1,4 @@
+class {{ defn.name }}({{ enum_base }}):
+{% for name, value in members %}
+    {{ name }} = {{ value|repr }}
+{% endfor %}

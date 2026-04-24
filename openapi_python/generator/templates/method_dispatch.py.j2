@@ -1,0 +1,12 @@
+if route == {{ op.route_literal|repr }}:
+            {{ "async " if is_async else "" }}def _call(*, params=None, query=None, headers=None, body=None):
+                return {{ "await " if is_async else "" }}self._transport.request(
+                    method={{ op.method|repr }},
+                    route={{ op.route_literal|repr }},
+                    base_url=self._base_url,
+                    params=params,
+                    query=query,
+                    headers=headers,
+                    body=body,
+                )
+            return _call

@@ -35,6 +35,6 @@ repos:
       - id: contract tests
         name: contract tests
         language: system
-        entry: uv run pytest tests/test_contracts.py -n auto
+        entry: uv run pytest -n auto
         pass_filenames: false
         priority: 2
