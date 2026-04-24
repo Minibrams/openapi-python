@@ -77,6 +77,30 @@ result = generate_client(
 
 Invalid extension outputs fail fast with explicit diagnostics.
 
+## Releases
+
+Releases are published from the protected `releases` branch. The package version is set manually in `pyproject.toml`, and pushing a release commit to `releases` triggers the GitHub Actions release workflow. The workflow creates the matching `vX.Y.Z` tag after checks pass.
+
+Before the first release, configure PyPI Trusted Publishing for this repository:
+
+- PyPI project: `openapi-python`
+- GitHub workflow: `release.yml`
+- GitHub environment: `pypi`
+
+The GitHub `pypi` environment should be limited to deployments from the `releases` branch.
+
+Release steps:
+
+```bash
+# 1. Update project.version in pyproject.toml, then commit that change.
+uv run python scripts/release.py --version 0.1.0
+
+# 2. If checks pass, push the current commit to the releases branch.
+uv run python scripts/release.py --version 0.1.0 --push-release-branch
+```
+
+The release workflow verifies that the version tag does not already exist, runs checks, builds the distributions, validates them with `twine`, creates the release tag, publishes to PyPI, and creates a GitHub Release with generated notes.
+
 ## Transport Decoupling
 
 Generated clients expose a transport protocol. You can plug in your own transport while keeping route-level typing guarantees.
