@@ -516,7 +516,7 @@ def _bucket_type(
         {
             "type": "object",
             "properties": bucket.props,
-            "required": bucket.required,
+            "required": list(bucket.required),
         },
         hint,
     )

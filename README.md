@@ -2,6 +2,8 @@
 
 `openapi-python` generates typed Python API clients from OpenAPI specs, with a developer-friendly and ergonomic string-literal-based interface strongly inspired by [openapi-typescript](https://openapi-ts.dev/).
 
+![openapi-python demo](media/demo.jpg)
+
 ## Installation
 
 ```bash
