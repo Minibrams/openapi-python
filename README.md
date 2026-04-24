@@ -1,14 +1,8 @@
 # openapi-python
 
-`openapi-python` generates strongly typed Python API clients from OpenAPI specs, with route-literal dispatch and transport decoupling.
+`openapi-python` generates strongly typed Python API clients from OpenAPI specs, with a developer-friendly and ergonomic string-literal-based interface strongly inspired by [openapi-typescript](https://openapi-ts.dev/).
 
 ## Installation
-
-For protocol-only generated clients where you provide the transport:
-
-```bash
-uv add openapi-python
-```
 
 For generated clients that use the built-in `httpx` transport:
 
@@ -16,22 +10,19 @@ For generated clients that use the built-in `httpx` transport:
 uv add "openapi-python[httpx]"
 ```
 
+For protocol-only generated clients where you provide the transport:
+
+```bash
+uv add openapi-python
+```
+
+
 ## CLI
+
+Generate a client from an OpenAPI spec in `openapi.json`:
 
 ```bash
 uv run openapi-python generate --spec ./openapi.json --out ./generated --package my_client
-```
-
-You can also pass the OpenAPI document directly as JSON:
-
-```bash
-uv run openapi-python generate --spec-json "$OPENAPI_JSON" --out ./generated --package my_client
-```
-
-For URL specs with self-signed certificates, disable verification explicitly:
-
-```bash
-uv run openapi-python generate --spec https://example.local/openapi.json --out ./generated --no-ssl
 ```
 
 ## Programmatic API
@@ -50,23 +41,37 @@ result = generate_client(
 )
 ```
 
-To generate from an in-memory OpenAPI document, pass a JSON string instead of `spec_source`:
+## Using generated clients
+
+Generated clients expose route-specific callables with typed `params`, `query`, `headers`, `body`, and return values.
+
+With the built-in `httpx` transport:
 
 ```python
-import json
-from pathlib import Path
+from generated.my_client import Client
 
-from openapi_python import GenerationRequest, generate_client
-
-result = generate_client(
-    GenerationRequest(
-        output_dir=Path("./generated"),
-        spec_json=json.dumps(app.openapi()),
-        package_name="my_client",
-        overwrite=True,
-    )
-)
+client = Client(base_url="https://api.example.com")
+book = client.get("/books/{book_id}")(params={"book_id": 1})
 ```
+
+For async APIs:
+
+```python
+from generated.my_client import AsyncClient
+
+async_client = AsyncClient(base_url="https://api.example.com")
+book = await async_client.get("/books/{book_id}")(params={"book_id": 1})
+```
+
+For protocol-only clients, provide your own transport:
+
+```python
+from generated.my_client import Client
+
+client = Client(base_url="https://api.example.com", transport=my_transport)
+book = client.get("/books/{book_id}")(params={"book_id": 1})
+```
+
 
 ## Extensibility
 
@@ -74,32 +79,6 @@ result = generate_client(
 
 - `normalize_hooks`: transform the normalized model before rendering.
 - `render_context_hooks`: transform rendered file content map before writing.
-
-Invalid extension outputs fail fast with explicit diagnostics.
-
-## Releases
-
-Releases are published from the protected `releases` branch. The package version is set manually in `pyproject.toml`, and pushing a release commit to `releases` triggers the GitHub Actions release workflow. The workflow creates the matching `vX.Y.Z` tag after checks pass.
-
-Before the first release, configure PyPI Trusted Publishing for this repository:
-
-- PyPI project: `openapi-python`
-- GitHub workflow: `release.yml`
-- GitHub environment: `pypi`
-
-The GitHub `pypi` environment should be limited to deployments from the `releases` branch.
-
-Release steps:
-
-```bash
-# 1. Update project.version in pyproject.toml, then commit that change.
-uv run python scripts/release.py --version 0.1.0
-
-# 2. If checks pass, push the current commit to the releases branch.
-uv run python scripts/release.py --version 0.1.0 --push-release-branch
-```
-
-The release workflow verifies that the version tag does not already exist, runs checks, builds the distributions, validates them with `twine`, creates the release tag, publishes to PyPI, and creates a GitHub Release with generated notes.
 
 ## Transport Decoupling
 
@@ -116,16 +95,7 @@ uv add "openapi-python[httpx]"
 uv run openapi-python generate --spec ./openapi.json --out ./generated --package my_client
 ```
 
-The generated `Client` can create its own default transport:
-
-```python
-from generated.my_client import Client
-
-client = Client(base_url="https://api.example.com")
-book = client.get("/books/{book_id}")(params={"book_id": 1})
-```
-
-You can also supply preconfigured `httpx` clients:
+You can supply preconfigured `httpx` clients:
 
 ```python
 import httpx
@@ -199,3 +169,27 @@ client = Client(
 )
 book = client.get("/books/{book_id}")(params={"book_id": 1})
 ```
+
+## Releases
+
+Releases are published from the protected `releases` branch. The package version is set manually in `pyproject.toml`, and pushing a release commit to `releases` triggers the GitHub Actions release workflow. The workflow creates the matching `vX.Y.Z` tag after checks pass.
+
+Before the first release, configure PyPI Trusted Publishing for this repository:
+
+- PyPI project: `openapi-python`
+- GitHub workflow: `release.yml`
+- GitHub environment: `pypi`
+
+The GitHub `pypi` environment should be limited to deployments from the `releases` branch.
+
+Release steps:
+
+```bash
+# 1. Update project.version in pyproject.toml, then commit that change.
+uv run python scripts/release.py --version 0.1.0
+
+# 2. If checks pass, push the current commit to the releases branch.
+uv run python scripts/release.py --version 0.1.0 --push-release-branch
+```
+
+The release workflow verifies that the version tag does not already exist, runs checks, builds the distributions, validates them with `twine`, creates the release tag, publishes to PyPI, and creates a GitHub Release with generated notes.
