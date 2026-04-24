@@ -165,6 +165,14 @@ class _TypeBuilder:
             return self._union(mapped)
 
         if schema_type == "array":
+            prefix_items = schema.get("prefixItems")
+            if isinstance(prefix_items, list):
+                item_types = [
+                    self._schema_to_type(item, f"{hint}Item") for item in prefix_items
+                ]
+                base = f"tuple[{', '.join(item_types)}]"
+                return f"{base} | None" if nullable else base
+
             item_type = self._schema_to_type(schema.get("items") or {}, f"{hint}Item")
             base = f"list[{item_type}]"
             return f"{base} | None" if nullable else base
@@ -197,7 +205,7 @@ class _TypeBuilder:
                 )
                 fields.append(
                     FieldDef(
-                        name=_snake(prop_name),
+                        name=prop_name,
                         annotation=field_type,
                         required=prop_name in required,
                     )
@@ -321,6 +329,7 @@ def _request_body_type(
 
 def _response_type(builder: _TypeBuilder, operation: dict, hint: str) -> str:
     responses = operation.get("responses") or {}
+    response_types: list[str] = []
     for code in sorted(responses.keys()):
         if not code.startswith("2"):
             continue
@@ -329,9 +338,12 @@ def _response_type(builder: _TypeBuilder, operation: dict, hint: str) -> str:
         schema = json_content.get("schema")
         if isinstance(schema, dict):
             if not schema:
-                return "None"
-            return builder.schema_type(schema, hint)
-    return "None"
+                response_types.append("None")
+            else:
+                response_types.append(builder.schema_type(schema, hint))
+        else:
+            response_types.append("None")
+    return builder._union(response_types)
 
 
 def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:

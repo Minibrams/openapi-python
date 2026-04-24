@@ -29,31 +29,15 @@ def _indent(text: str, spaces: int = 4) -> str:
 
 def _format_typeddict(defn: TypedDictDef) -> str:
     if not defn.fields:
-        return f"class {defn.name}(TypedDict, total=False):\n    pass\n"
+        return f"{defn.name} = TypedDict({defn.name!r}, {{}})\n"
 
-    required_fields = [field for field in defn.fields if field.required]
-    optional_fields = [field for field in defn.fields if not field.required]
-
-    if not required_fields:
-        lines = [f"class {defn.name}(TypedDict, total=False):"]
-        for field in optional_fields:
-            lines.append(f"    {field.name}: {field.annotation}")
-        return "\n".join(lines) + "\n"
-
-    if not optional_fields:
-        lines = [f"class {defn.name}(TypedDict):"]
-        for field in required_fields:
-            lines.append(f"    {field.name}: {field.annotation}")
-        return "\n".join(lines) + "\n"
-
-    optional_base = f"_{defn.name}Optional"
-    lines = [f"class {optional_base}(TypedDict, total=False):"]
-    for field in optional_fields:
-        lines.append(f"    {field.name}: {field.annotation}")
-    lines.append("")
-    lines.append(f"class {defn.name}({optional_base}):")
-    for field in required_fields:
-        lines.append(f"    {field.name}: {field.annotation}")
+    lines = [f"{defn.name} = TypedDict(", f"    {defn.name!r},", "    {"]
+    for field in defn.fields:
+        annotation = field.annotation
+        if not field.required:
+            annotation = f"NotRequired[{annotation}]"
+        lines.append(f"        {field.name!r}: {annotation},")
+    lines.extend(["    },", ")"])
     return "\n".join(lines) + "\n"
 
 
@@ -85,6 +69,40 @@ def _format_enum(defn: EnumDef) -> str:
         used.add(name)
         lines.append(f"    {name} = {value!r}")
     return "\n".join(lines) + "\n"
+
+
+def _typed_dict_dependencies(defn: TypedDictDef, names: set[str]) -> set[str]:
+    dependencies: set[str] = set()
+    for field in defn.fields:
+        dependencies.update(
+            name
+            for name in names
+            if name != defn.name
+            and re.search(rf"\b{re.escape(name)}\b", field.annotation)
+        )
+    return dependencies
+
+
+def _order_typeddicts(defns: tuple[TypedDictDef, ...]) -> list[TypedDictDef]:
+    by_name = {item.name: item for item in defns}
+    names = set(by_name)
+    ordered: list[TypedDictDef] = []
+    temporary: set[str] = set()
+    permanent: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in permanent or name in temporary:
+            return
+        temporary.add(name)
+        for dependency in sorted(_typed_dict_dependencies(by_name[name], names)):
+            visit(dependency)
+        temporary.remove(name)
+        permanent.add(name)
+        ordered.append(by_name[name])
+
+    for name in sorted(by_name):
+        visit(name)
+    return ordered
 
 
 def _call_signature(op: OperationDef, *, is_async: bool = False) -> str:
@@ -191,7 +209,7 @@ def _render_types(spec: NormalizedSpec) -> str:
     blocks = (
         [_format_enum(item) for item in spec.enums]
         + [_format_alias(alias) for alias in spec.aliases]
-        + [_format_typeddict(item) for item in spec.typed_dicts]
+        + [_format_typeddict(item) for item in _order_typeddicts(spec.typed_dicts)]
     )
     return _load_template("types.py.tpl").substitute(
         type_blocks="\n".join(blocks).strip() + "\n"
