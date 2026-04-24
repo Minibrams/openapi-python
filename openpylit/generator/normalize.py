@@ -129,6 +129,9 @@ class _TypeBuilder:
         if "const" in schema:
             return f"Literal[{schema['const']!r}]"
 
+        if schema.get("type") == "string" and schema.get("format") == "binary":
+            return "bytes"
+
         if "enum" in schema and isinstance(schema["enum"], list):
             title = str(schema.get("title") or "")
             alias = _type_name_from_hint(hint)
@@ -320,11 +323,14 @@ def _request_body_type(
     if not isinstance(request_body, dict):
         return None, False
     content = request_body.get("content") or {}
-    json_content = content.get("application/json") or {}
-    schema = json_content.get("schema")
-    if not isinstance(schema, dict):
-        return None, False
-    return builder.schema_type(schema, hint), bool(request_body.get("required", False))
+    for content_type in ("application/json", "multipart/form-data"):
+        typed_content = content.get(content_type) or {}
+        schema = typed_content.get("schema")
+        if isinstance(schema, dict):
+            return builder.schema_type(schema, hint), bool(
+                request_body.get("required", False)
+            )
+    return None, False
 
 
 def _response_type(builder: _TypeBuilder, operation: dict, hint: str) -> str:

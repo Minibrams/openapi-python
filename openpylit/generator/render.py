@@ -33,7 +33,7 @@ def _format_typeddict(defn: TypedDictDef) -> str:
 
     lines = [f"{defn.name} = TypedDict(", f"    {defn.name!r},", "    {"]
     for field in defn.fields:
-        annotation = field.annotation
+        annotation = repr(field.annotation)
         if not field.required:
             annotation = f"NotRequired[{annotation}]"
         lines.append(f"        {field.name!r}: {annotation},")
