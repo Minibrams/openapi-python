@@ -32,7 +32,6 @@ result = generate_client(
         output_dir=Path("./generated"),
         package_name="my_client",
         overwrite=True,
-        verify_ssl=True,  # set False to ignore SSL certificate verification for URL specs
     )
 )
 ```
