@@ -107,7 +107,7 @@ def main() -> None:
     run(["uv", "run", "ruff", "check", "--select", "I", "."])
     run(["uv", "run", "ruff", "format", "--check", "."])
     run(["uv", "run", "basedpyright", "-p", "pyproject.toml"])
-    run(["uv", "run", "pytest", "tests/test_contracts.py", "-n", "auto"])
+    run(["uv", "run", "pytest", "-n", "auto"])
     run(["uv", "build"])
 
     if args.push_release_branch:
