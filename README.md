@@ -7,11 +7,11 @@
 ## Installation
 
 ```bash
-# For built-in httpx transport:
-uv add openapi-python[httpx]
-
 # If you want to define your own HTTP transport (requests, asyncio, ...)
 uv add openapi-python
+
+# For built-in httpx transport:
+uv add openapi-python[httpx]
 ```
 
 
