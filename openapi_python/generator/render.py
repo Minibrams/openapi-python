@@ -109,6 +109,36 @@ def _typed_dict_dependencies(defn: TypedDictDef, names: set[str]) -> set[str]:
     return dependencies
 
 
+def _alias_dependencies(defn: TypeAliasDef, names: set[str]) -> set[str]:
+    return {
+        name
+        for name in names
+        if name != defn.name and re.search(rf"\b{re.escape(name)}\b", defn.annotation)
+    }
+
+
+def _order_aliases(defns: tuple[TypeAliasDef, ...]) -> list[TypeAliasDef]:
+    by_name = {item.name: item for item in defns}
+    names = set(by_name)
+    ordered: list[TypeAliasDef] = []
+    temporary: set[str] = set()
+    permanent: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in permanent or name in temporary:
+            return
+        temporary.add(name)
+        for dependency in sorted(_alias_dependencies(by_name[name], names)):
+            visit(dependency)
+        temporary.remove(name)
+        permanent.add(name)
+        ordered.append(by_name[name])
+
+    for name in sorted(by_name):
+        visit(name)
+    return ordered
+
+
 def _order_typeddicts(defns: tuple[TypedDictDef, ...]) -> list[TypedDictDef]:
     by_name = {item.name: item for item in defns}
     names = set(by_name)
@@ -205,7 +235,7 @@ def _fallback_method_block(
 def _render_types(spec: NormalizedSpec) -> str:
     blocks = (
         [_format_enum(item) for item in spec.enums]
-        + [_format_alias(alias) for alias in spec.aliases]
+        + [_format_alias(alias) for alias in _order_aliases(spec.aliases)]
         + [_format_typeddict(item) for item in _order_typeddicts(spec.typed_dicts)]
     )
     return _render_template(

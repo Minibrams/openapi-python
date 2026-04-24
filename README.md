@@ -1,31 +1,31 @@
 # openapi-python
 
-`openapi-python` generates strongly typed Python API clients from OpenAPI specs, with a developer-friendly and ergonomic string-literal-based interface strongly inspired by [openapi-typescript](https://openapi-ts.dev/).
+`openapi-python` generates typed Python API clients from OpenAPI specs, with a developer-friendly and ergonomic string-literal-based interface strongly inspired by [openapi-typescript](https://openapi-ts.dev/).
 
 ## Installation
 
-For generated clients that use the built-in `httpx` transport:
-
 ```bash
+# For built-in httpx transport:
 uv add openapi-python[httpx]
-```
 
-For protocol-only generated clients where you provide the transport:
-
-```bash
+# If you want to define your own HTTP transport (requests, asyncio, ...)
 uv add openapi-python
 ```
 
 
-## CLI
+## Client generation
 
 Generate a client from an OpenAPI spec in `openapi.json`:
 
 ```bash
-uv run openapi-python generate --spec ./openapi.json --out ./generated --package my_client
+# Types + HTTP client/transport
+uv run openapi-python generate --spec ./openapi.json --out ./generated
+
+# Just types, use your own HTTP client/transport
+uv run openapi-python generate --spec ./openapi.json --out ./generated --transport-mode protocol-only
 ```
 
-## Programmatic API
+... or programatically:
 
 ```python
 from pathlib import Path

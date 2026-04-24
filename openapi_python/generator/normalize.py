@@ -237,7 +237,9 @@ def _ensure_component(state: _TypeState, name: str) -> tuple[str, _TypeState]:
     type_name = _is_unique_type_name(state, _pascal(name))
 
     state = _with_component_type_name(state, name, type_name)
-    _, state = _schema_to_type(state, schema, type_name, component_name=name)
+    annotation, state = _schema_to_type(state, schema, type_name, component_name=name)
+    if not _is_registered_type_name(state, type_name):
+        state = _with_alias(state, TypeAliasDef(name=type_name, annotation=annotation))
     return type_name, state
 
 
