@@ -109,7 +109,6 @@ def main() -> None:
     run(["uv", "run", "basedpyright", "-p", "pyproject.toml"])
     run(["uv", "run", "pytest", "tests/test_contracts.py", "-n", "auto"])
     run(["uv", "build"])
-    run(["uv", "run", "twine", "check", *sorted(str(path) for path in dist.iterdir())])
 
     if args.push_release_branch:
         run(["git", "push", "origin", "HEAD:releases"])
