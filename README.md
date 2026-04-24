@@ -7,7 +7,7 @@
 For generated clients that use the built-in `httpx` transport:
 
 ```bash
-uv add "openapi-python[httpx]"
+uv add openapi-python[httpx]
 ```
 
 For protocol-only generated clients where you provide the transport:
