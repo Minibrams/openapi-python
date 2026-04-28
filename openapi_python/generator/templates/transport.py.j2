@@ -3,17 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import {{ typing_imports }}
 
+from .types import RouteLiteral as RouteLiteral
+
 {% if include_default_transport %}
 if TYPE_CHECKING:
     import httpx
 
 {% endif %}
-RouteLiteral = Literal[
-{% for route_literal in route_literals %}
-    {{ route_literal|repr }},
-{% endfor %}
-]
-
 
 class Transport(Protocol):
     def request(

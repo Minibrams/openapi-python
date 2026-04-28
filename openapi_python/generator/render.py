@@ -233,9 +233,10 @@ def _fallback_method_block(
 
 
 def _render_types(spec: NormalizedSpec) -> str:
+    aliases = (*_route_aliases(spec), *_order_aliases(spec.aliases))
     blocks = (
         [_format_enum(item) for item in spec.enums]
-        + [_format_alias(alias) for alias in _order_aliases(spec.aliases)]
+        + [_format_alias(alias) for alias in aliases]
         + [_format_typeddict(item) for item in _order_typeddicts(spec.typed_dicts)]
     )
     return _render_template(
@@ -244,14 +245,39 @@ def _render_types(spec: NormalizedSpec) -> str:
     )
 
 
+def _literal_annotation(values: set[str]) -> str:
+    return f"Literal[{', '.join(repr(value) for value in sorted(values))}]"
+
+
+def _route_aliases(spec: NormalizedSpec) -> tuple[TypeAliasDef, ...]:
+    routes_by_method: dict[str, set[str]] = {}
+    for op in spec.operations:
+        routes_by_method.setdefault(op.method.upper(), set()).add(op.route_literal)
+
+    aliases = [
+        TypeAliasDef(
+            name=f"{method}_RouteLiteral", annotation=_literal_annotation(routes)
+        )
+        for method, routes in sorted(routes_by_method.items())
+    ]
+
+    if aliases:
+        aliases.append(
+            TypeAliasDef(
+                name="RouteLiteral",
+                annotation=" | ".join(alias.name for alias in aliases),
+            )
+        )
+    else:
+        aliases.append(TypeAliasDef(name="RouteLiteral", annotation="str"))
+    return tuple(aliases)
+
+
 def _render_transport(spec: NormalizedSpec, *, transport_mode: str) -> str:
     return _render_template(
         "transport.py.j2",
-        route_literals=[op.route_literal for op in spec.operations],
         typing_imports=(
-            "TYPE_CHECKING, Literal, Protocol"
-            if transport_mode == "default"
-            else "Literal, Protocol"
+            "TYPE_CHECKING, Protocol" if transport_mode == "default" else "Protocol"
         ),
         include_default_transport=transport_mode == "default",
     )
