@@ -38,6 +38,8 @@ _JINJA_ENV = Environment(
 _JINJA_ENV.filters["repr"] = repr
 _JINJA_ENV.filters["field_annotation"] = _field_annotation
 
+_IDENTIFIER = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+
 
 def _render_template(name: str, **context: object) -> str:
     return _JINJA_ENV.get_template(name).render(**context)
@@ -97,24 +99,22 @@ def _format_enum(defn: EnumDef) -> str:
     )
 
 
+def _annotation_dependencies(annotation: str, names: set[str]) -> set[str]:
+    return names.intersection(_IDENTIFIER.findall(annotation))
+
+
 def _typed_dict_dependencies(defn: TypedDictDef, names: set[str]) -> set[str]:
     dependencies: set[str] = set()
     for field in defn.fields:
-        dependencies.update(
-            name
-            for name in names
-            if name != defn.name
-            and re.search(rf"\b{re.escape(name)}\b", field.annotation)
-        )
+        dependencies.update(_annotation_dependencies(field.annotation, names))
+    dependencies.discard(defn.name)
     return dependencies
 
 
 def _alias_dependencies(defn: TypeAliasDef, names: set[str]) -> set[str]:
-    return {
-        name
-        for name in names
-        if name != defn.name and re.search(rf"\b{re.escape(name)}\b", defn.annotation)
-    }
+    dependencies = _annotation_dependencies(defn.annotation, names)
+    dependencies.discard(defn.name)
+    return dependencies
 
 
 def _order_aliases(defns: tuple[TypeAliasDef, ...]) -> list[TypeAliasDef]:
