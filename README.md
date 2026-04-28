@@ -7,11 +7,8 @@
 ## Installation
 
 ```bash
-# If you want to define your own HTTP transport (requests, asyncio, ...)
-uv add openapi-python
-
-# For built-in httpx transport:
-uv add openapi-python[httpx]
+uv add openapi-python         # If you want to define your own HTTP transport (requests, asyncio, ...)
+uv add openapi-python[httpx]  # Ships with an `httpx` transport
 ```
 
 
@@ -20,10 +17,10 @@ uv add openapi-python[httpx]
 Generate a client from an OpenAPI spec in `openapi.json`:
 
 ```bash
-# Types + HTTP client/transport
+# Types + HTTP transport
 uv run openapi-python generate --spec ./openapi.json --out ./generated
 
-# Just types, use your own HTTP client/transport
+# Types
 uv run openapi-python generate --spec ./openapi.json --out ./generated --transport-mode protocol-only
 ```
 
