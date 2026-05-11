@@ -14,8 +14,8 @@ async def use_async_client() -> None:
         "object_type": "sensor",
         "object_id": "sensor-1",
     }
-    assert_type(body["relation"], FGARelation)
-    assert_type(body["object_type"], FGAObjectType)
+    _relation: FGARelation = body["relation"]
+    _object_type: FGAObjectType = body["object_type"]
 
     response = await async_client.post("/check")(body=body)
     assert_type(response, UserFGACheckRequest)

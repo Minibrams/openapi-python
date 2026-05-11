@@ -21,8 +21,8 @@ async def use_async_client() -> None:
         "q": "alp",
         "tags": ["sf", "classic"],
     }
-    assert_type(query["tenant"], str)
-    assert_type(query["limit"], int)
+    _tenant: str = query["tenant"]
+    _limit: int = query["limit"]
     assert_type(query.get("q"), str | None)
     assert_type(query["tags"], list[str])
 

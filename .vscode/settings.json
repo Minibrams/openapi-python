@@ -3,7 +3,6 @@
   "editor.quickSuggestions": {
     "strings": true
   },
-  // API
   "[python]": {
     "editor.tabSize": 4,
     "editor.defaultFormatter": "charliermarsh.ruff",

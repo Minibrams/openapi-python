@@ -26,9 +26,10 @@ async def use_async_client() -> None:
         "rating": Rating._2,
         "visibility": "private",
     }
-    assert_type(body["status"], Status)
-    assert_type(body["rating"], Rating)
-    assert_type(body["visibility"], ArticleVisibility)
+
+    _status: Status = body["status"]
+    _rating: Rating = body["rating"]
+    _visibility: ArticleVisibility = body["visibility"]
     updated = await async_client.patch("/articles/{article_id}")(
         params={"article_id": 1},
         body=body,

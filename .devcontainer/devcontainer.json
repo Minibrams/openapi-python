@@ -1,9 +1,9 @@
 {
-    "name": "dev",
+    "name": "openapi-python-dev",
     "dockerComposeFile": [
         "docker-compose.yml"
     ],
-    "service": "dev",
+    "service": "openapi-python-dev",
     "workspaceFolder": "/code",
     "overrideCommand": true,
     "postCreateCommand": "prek install",
@@ -14,7 +14,7 @@
                 "openai.chatgpt",
                 // Python dev
                 "charliermarsh.ruff",
-                "detachhead.basedpyright",
+                "astral-sh.ty",
                 "tamasfe.even-better-toml"
             ],
             "settings": {

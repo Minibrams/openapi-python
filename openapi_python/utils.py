@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypeVar, overload
+from typing import TypeVar, cast, overload
 
 _T = TypeVar("_T")
 
@@ -19,9 +19,10 @@ def safe_get(
     current = obj
     for part in path:
         if isinstance(current, dict):
-            if part not in current:
+            current_dict = cast(dict[str | int, object], current)
+            if part not in current_dict:
                 return None
-            current = current[part]
+            current = current_dict[part]
             continue
 
         if isinstance(current, list) and isinstance(part, int):

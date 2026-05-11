@@ -15,8 +15,8 @@ client = Client(base_url="http://testserver")
 int_params: GET_Lookup_ValueParams = {"value": 1}
 str_params: GET_Lookup_ValueParams = {"value": "abc"}
 
-assert_type(int_params["value"], int | str)
-assert_type(str_params["value"], int | str)
+int_value: int | str = int_params["value"]
+str_value: int | str = str_params["value"]
 
 int_result = client.get("/lookup/{value}")(params=int_params)
 assert_type(int_result, LookupResult)

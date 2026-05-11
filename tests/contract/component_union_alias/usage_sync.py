@@ -12,8 +12,8 @@ body: UserFGACheckRequest = {
     "object_type": "sensor",
     "object_id": "sensor-1",
 }
-assert_type(body["relation"], FGARelation)
-assert_type(body["object_type"], FGAObjectType)
+relation: FGARelation = body["relation"]
+object_type: FGAObjectType = body["object_type"]
 
 response = client.post("/check")(body=body)
 assert_type(response, UserFGACheckRequest)

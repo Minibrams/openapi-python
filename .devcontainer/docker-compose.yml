@@ -1,5 +1,5 @@
 services:
-  dev:
+  openapi-python-dev:
     build:
       context: ../
       dockerfile: .devcontainer/Dockerfile

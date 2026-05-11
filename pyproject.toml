@@ -34,7 +34,6 @@ openapi-python = "openapi_python.cli:main"
 
 [dependency-groups]
 dev = [
-    "basedpyright>=1.39.3",
     "fastapi>=0.115.12",
     "httpx>=0.28.1",
     "pytest>=8.3.5",
@@ -43,6 +42,7 @@ dev = [
     "python-multipart>=0.0.20",
     "ruff>=0.9.10",
     "twine>=6.1.0",
+    "ty>=0.0.34",
     "uvicorn>=0.34.0",
 ]
 
@@ -53,15 +53,16 @@ package = true
 ignore = ["E712"]
 extend-select = ["I"]
 
-[tool.pyright]
-include = ["./openapi_python/**/*.py"]
-typeCheckingMode = "standard"
-reportMissingImports = true
-reportUnusedVariable = true
-reportOptionalSubscript = true
-reportOptionalMemberAccess = true
-reportOptionalCall = true
-pythonVersion = "3.12"
+[tool.ty.src]
+include = ["**/*.py"]
+exclude = ["**/__pycache__/", ".venv/", "**/generated/"]
+
+[tool.ty.environment]
+python = ".venv"
+python-version = "3.12"
+
+[tool.ty.rules]
+unresolved-import = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

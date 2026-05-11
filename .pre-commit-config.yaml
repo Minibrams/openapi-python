@@ -28,7 +28,7 @@ repos:
       - id: type check
         name: type check
         language: system
-        entry: uv run basedpyright .
+        entry: uv run ty check .
         pass_filenames: false
         priority: 1
 

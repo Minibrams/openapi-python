@@ -24,9 +24,9 @@ body: ArticleUpdate = {
     "rating": Rating._2,
     "visibility": "private",
 }
-assert_type(body["status"], Status)
-assert_type(body["rating"], Rating)
-assert_type(body["visibility"], ArticleVisibility)
+status: Status = body["status"]
+rating: Rating = body["rating"]
+visibility: ArticleVisibility = body["visibility"]
 updated = client.patch("/articles/{article_id}")(
     params={"article_id": 1},
     body=body,

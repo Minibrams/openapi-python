@@ -41,5 +41,8 @@ def test_contract_types(contract_dir: Path) -> None:
     generate = _run(["python", "generate.py"], cwd=contract_dir)
     assert generate.returncode == 0, _output(generate)
 
-    typecheck = _run(["basedpyright", "-p", "pyrightconfig.json"], cwd=contract_dir)
+    typecheck = _run(
+        ["ty", "check", ".", "--exclude", "generated", "--python-version", "3.12"],
+        cwd=contract_dir,
+    )
     assert typecheck.returncode == 0, _output(typecheck)
