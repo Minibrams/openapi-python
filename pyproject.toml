@@ -55,7 +55,7 @@ extend-select = ["I"]
 
 [tool.ty.src]
 include = ["**/*.py"]
-exclude = ["**/__pycache__/", ".venv/", "**/generated/"]
+exclude = ["**/__pycache__/", ".venv/", "tests/contract/", "**/generated/"]
 
 [tool.ty.environment]
 python = ".venv"
