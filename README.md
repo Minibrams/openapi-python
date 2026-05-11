@@ -2,7 +2,7 @@
 
 [![QA](https://github.com/Minibrams/openpylit/actions/workflows/qa.yml/badge.svg)](https://github.com/Minibrams/openpylit/actions/workflows/qa.yml)
 [![Release](https://github.com/Minibrams/openpylit/actions/workflows/release.yml/badge.svg)](https://github.com/Minibrams/openpylit/actions/workflows/release.yml)
-[![PyPI](https://img.shields.io/pypi/v/openapi-python.svg)](https://pypi.org/project/openapi-python/)
+[![PyPI](https://img.shields.io/pypi/v/openapi-python.svg?color=github)](https://pypi.org/project/openapi-python/)
 
 `openapi-python` generates typed Python API clients from OpenAPI specs, with a developer-friendly and ergonomic string-literal-based interface strongly inspired by [openapi-typescript](https://openapi-ts.dev/).
 
