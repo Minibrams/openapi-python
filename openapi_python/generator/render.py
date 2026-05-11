@@ -8,21 +8,47 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from .extensions import GeneratorExtensions
 from .model import (
+    AnyAnnotation,
+    DictAnnotation,
     EnumDef,
     FieldDef,
     GeneratedArtifact,
+    ListAnnotation,
+    LiteralAnnotation,
+    NamedAnnotation,
     NormalizedSpec,
     OperationDef,
+    TupleAnnotation,
     TypeAliasDef,
+    TypeAnnotation,
     TypedDictDef,
+    UnionAnnotation,
 )
+
+
+def _render_annotation(annotation: TypeAnnotation) -> str:
+    match annotation:
+        case AnyAnnotation():
+            return "Any"
+        case DictAnnotation(key, value):
+            return f"dict[{_render_annotation(key)}, {_render_annotation(value)}]"
+        case ListAnnotation(item):
+            return f"list[{_render_annotation(item)}]"
+        case LiteralAnnotation(values):
+            return f"Literal[{', '.join(repr(value) for value in values)}]"
+        case NamedAnnotation(name):
+            return name
+        case TupleAnnotation(items):
+            return f"tuple[{', '.join(_render_annotation(item) for item in items)}]"
+        case UnionAnnotation(items):
+            return " | ".join(_render_annotation(item) for item in items) or "Any"
 
 
 def _field_annotation(field: FieldDef) -> str:
     """
     Jinja2 filter to format a FieldDef's annotation.
     """
-    annotation = repr(field.annotation)
+    annotation = repr(_render_annotation(field.annotation))
     if not field.required:
         annotation = f"NotRequired[{annotation}]"
     return annotation
@@ -36,9 +62,8 @@ _JINJA_ENV = Environment(
     undefined=StrictUndefined,
 )
 _JINJA_ENV.filters["repr"] = repr
+_JINJA_ENV.filters["annotation"] = _render_annotation
 _JINJA_ENV.filters["field_annotation"] = _field_annotation
-
-_IDENTIFIER = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 
 
 def _render_template(name: str, **context: object) -> str:
@@ -99,8 +124,23 @@ def _format_enum(defn: EnumDef) -> str:
     )
 
 
-def _annotation_dependencies(annotation: str, names: set[str]) -> set[str]:
-    return names.intersection(_IDENTIFIER.findall(annotation))
+def _annotation_dependencies(annotation: TypeAnnotation, names: set[str]) -> set[str]:
+    match annotation:
+        case AnyAnnotation() | LiteralAnnotation():
+            return set()
+        case DictAnnotation(key, value):
+            return _annotation_dependencies(key, names) | _annotation_dependencies(
+                value, names
+            )
+        case ListAnnotation(item):
+            return _annotation_dependencies(item, names)
+        case NamedAnnotation(name):
+            return {name} if name in names else set()
+        case TupleAnnotation(items) | UnionAnnotation(items):
+            dependencies: set[str] = set()
+            for item in items:
+                dependencies.update(_annotation_dependencies(item, names))
+            return dependencies
 
 
 def _typed_dict_dependencies(defn: TypedDictDef, names: set[str]) -> set[str]:
@@ -162,21 +202,21 @@ def _order_typeddicts(defns: tuple[TypedDictDef, ...]) -> list[TypedDictDef]:
 
 
 def _call_parameters(op: OperationDef) -> dict[str, str]:
-    params = "params: " + op.params_type
+    params = "params: " + _render_annotation(op.params_type)
     if not op.params_required:
         params += " | None = None"
 
-    query = "query: " + op.query_type
+    query = "query: " + _render_annotation(op.query_type)
     if not op.query_required:
         query += " | None = None"
 
-    headers = "headers: " + op.headers_type
+    headers = "headers: " + _render_annotation(op.headers_type)
     if not op.headers_required:
         headers += " | None = None"
 
     body = "body: object | None = None"
-    if op.body_type:
-        body = f"body: {op.body_type}"
+    if op.body_type is not None:
+        body = f"body: {_render_annotation(op.body_type)}"
         if not op.body_required:
             body += " | None = None"
 
@@ -245,8 +285,8 @@ def _render_types(spec: NormalizedSpec) -> str:
     )
 
 
-def _literal_annotation(values: set[str]) -> str:
-    return f"Literal[{', '.join(repr(value) for value in sorted(values))}]"
+def _literal_annotation(values: set[str]) -> LiteralAnnotation:
+    return LiteralAnnotation(tuple(sorted(values)))
 
 
 def _route_aliases(spec: NormalizedSpec) -> tuple[TypeAliasDef, ...]:
@@ -265,11 +305,15 @@ def _route_aliases(spec: NormalizedSpec) -> tuple[TypeAliasDef, ...]:
         aliases.append(
             TypeAliasDef(
                 name="RouteLiteral",
-                annotation=" | ".join(alias.name for alias in aliases),
+                annotation=UnionAnnotation(
+                    tuple(NamedAnnotation(alias.name) for alias in aliases)
+                ),
             )
         )
     else:
-        aliases.append(TypeAliasDef(name="RouteLiteral", annotation="str"))
+        aliases.append(
+            TypeAliasDef(name="RouteLiteral", annotation=NamedAnnotation("str"))
+        )
     return tuple(aliases)
 
 

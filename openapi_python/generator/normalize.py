@@ -8,12 +8,20 @@ from dataclasses import dataclass, field
 from ..utils import safe_get
 from .diagnostics import invalid_spec
 from .model import (
+    AnyAnnotation,
+    DictAnnotation,
     EnumDef,
     FieldDef,
+    ListAnnotation,
+    LiteralAnnotation,
+    NamedAnnotation,
     NormalizedSpec,
     OperationDef,
+    TupleAnnotation,
     TypeAliasDef,
+    TypeAnnotation,
     TypedDictDef,
+    UnionAnnotation,
 )
 
 _METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
@@ -115,7 +123,7 @@ def _is_used_type_name(state: _TypeState, name: str) -> bool:
     )
 
 
-def _is_unique_type_name(state: _TypeState, name: str) -> str:
+def _unique_type_name(state: _TypeState, name: str) -> str:
     if not _is_used_type_name(state, name):
         return name
 
@@ -214,37 +222,43 @@ def _without_processing(state: _TypeState, name: str) -> _TypeState:
     )
 
 
-def _union(variants: Iterable[str]) -> str:
-    unique: list[str] = []
+def _union(variants: Iterable[TypeAnnotation]) -> TypeAnnotation:
+    unique: list[TypeAnnotation] = []
     for item in variants:
         if item not in unique:
             unique.append(item)
-    return " | ".join(unique) if unique else "Any"
+    if not unique:
+        return AnyAnnotation()
+    if len(unique) == 1:
+        return unique[0]
+    return UnionAnnotation(tuple(unique))
 
 
-def _ensure_component(state: _TypeState, name: str) -> tuple[str, _TypeState]:
+def _ensure_component(
+    state: _TypeState, name: str
+) -> tuple[TypeAnnotation, _TypeState]:
     """
     Ensures that a component schema is registered as a type.
     """
     existing = state.component_type_names.get(name)
     if existing is not None:
-        return existing, state
+        return NamedAnnotation(existing), state
 
     schema = safe_get(state.components, "schemas", name, type=dict)
     if schema is None:
         raise invalid_spec("Unresolved component schema reference", name)
 
-    type_name = _is_unique_type_name(state, _pascal(name))
+    type_name = _unique_type_name(state, _pascal(name))
 
     state = _with_component_type_name(state, name, type_name)
     annotation, state = _schema_to_type(state, schema, type_name, component_name=name)
     if not _is_registered_type_name(state, type_name):
         state = _with_alias(state, TypeAliasDef(name=type_name, annotation=annotation))
-    return type_name, state
+    return NamedAnnotation(type_name), state
 
 
-def _nullable(annotation: str, nullable: bool) -> str:
-    return f"{annotation} | None" if nullable else annotation
+def _nullable(annotation: TypeAnnotation, nullable: bool) -> TypeAnnotation:
+    return _union((annotation, NamedAnnotation("None"))) if nullable else annotation
 
 
 def _schema_enum_to_type(
@@ -252,12 +266,12 @@ def _schema_enum_to_type(
     schema: dict,
     hint: str,
     component_name: str | None,
-) -> tuple[str, _TypeState]:
+) -> tuple[TypeAnnotation, _TypeState]:
     values = schema["enum"]
     if component_name is not None:
         # Component-level enums are rendered as actual reusable Enum classes
         enum = EnumDef(name=hint, values=tuple(values))
-        return enum.name, _with_enum(state, enum)
+        return NamedAnnotation(enum.name), _with_enum(state, enum)
 
     # Inline enums are just rendered as literals
     title = str(schema.get("title") or "")
@@ -267,17 +281,16 @@ def _schema_enum_to_type(
     if signature is not None:
         existing = state.aliases_by_signature.get(signature)
         if existing:
-            return existing, state
+            return NamedAnnotation(existing), state
 
-    literal_values = ", ".join(values_list)
-    alias = TypeAliasDef(name=alias_name, annotation=f"Literal[{literal_values}]")
-    return alias_name, _with_alias(state, alias, signature)
+    alias = TypeAliasDef(name=alias_name, annotation=LiteralAnnotation(tuple(values)))
+    return NamedAnnotation(alias_name), _with_alias(state, alias, signature)
 
 
 def _schema_union_to_type(
     state: _TypeState, schemas: list, hint: str
-) -> tuple[str, _TypeState]:
-    variants: list[str] = []
+) -> tuple[TypeAnnotation, _TypeState]:
+    variants: list[TypeAnnotation] = []
     for item in schemas:
         item_type, state = _schema_to_type(state, item, f"{hint}Variant")
         variants.append(item_type)
@@ -286,11 +299,11 @@ def _schema_union_to_type(
 
 def _schema_type_list_to_type(
     state: _TypeState, schema_types: list, hint: str
-) -> tuple[str, _TypeState]:
-    mapped: list[str] = []
+) -> tuple[TypeAnnotation, _TypeState]:
+    mapped: list[TypeAnnotation] = []
     for schema_type in schema_types:
         if schema_type == "null":
-            mapped.append("None")
+            mapped.append(NamedAnnotation("None"))
             continue
         item_type, state = _schema_to_type(state, {"type": schema_type}, hint)
         mapped.append(item_type)
@@ -299,39 +312,41 @@ def _schema_type_list_to_type(
 
 def _schema_array_to_type(
     state: _TypeState, schema: dict, hint: str
-) -> tuple[str, _TypeState]:
+) -> tuple[TypeAnnotation, _TypeState]:
     nullable = bool(schema.get("nullable"))
     prefix_items = safe_get(schema, "prefixItems", type=list)
     if prefix_items is not None:
-        item_types: list[str] = []
+        item_types: list[TypeAnnotation] = []
         for item in prefix_items:
             item_type, state = _schema_to_type(state, item, f"{hint}Item")
             item_types.append(item_type)
-        return _nullable(f"tuple[{', '.join(item_types)}]", nullable), state
+        return _nullable(TupleAnnotation(tuple(item_types)), nullable), state
 
     item_schema = safe_get(schema, "items", type=dict) or {}
     item_type, state = _schema_to_type(state, item_schema, f"{hint}Item")
-    return _nullable(f"list[{item_type}]", nullable), state
+    return _nullable(ListAnnotation(item_type), nullable), state
 
 
 def _schema_map_to_type(
     state: _TypeState, schema: dict, hint: str
-) -> tuple[str, _TypeState]:
+) -> tuple[TypeAnnotation, _TypeState]:
     nullable = bool(schema.get("nullable"))
     additional_properties = schema["additionalProperties"]
     value_type, state = _schema_to_type(state, additional_properties, f"{hint}Value")
-    return _nullable(f"dict[str, {value_type}]", nullable), state
+    return _nullable(
+        DictAnnotation(NamedAnnotation("str"), value_type), nullable
+    ), state
 
 
 def _schema_object_to_type(
     state: _TypeState, schema: dict, hint: str
-) -> tuple[str, _TypeState]:
+) -> tuple[TypeAnnotation, _TypeState]:
     nullable = bool(schema.get("nullable"))
     name = _type_name_from_hint(hint)
     if name in state.processing:
-        return name, state
+        return NamedAnnotation(name), state
     if name in state.typed_dicts:
-        return name, state
+        return NamedAnnotation(name), state
 
     state = _with_processing(state, name)
     props = safe_get(schema, "properties", type=dict) or {}
@@ -353,7 +368,7 @@ def _schema_object_to_type(
 
     state = _without_processing(state, name)
     state = _with_typeddict(state, TypedDictDef(name=name, fields=tuple(fields)))
-    return _nullable(name, nullable), state
+    return _nullable(NamedAnnotation(name), nullable), state
 
 
 def _schema_to_type(
@@ -362,19 +377,19 @@ def _schema_to_type(
     hint: str,
     *,
     component_name: str | None = None,
-) -> tuple[str, _TypeState]:
+) -> tuple[TypeAnnotation, _TypeState]:
     """
-    Takes a JSON schema object and returns the corresponding Python
-    type annotation along with an updated state containing any new
+    Takes a JSON schema object and returns the corresponding Python type
+    annotation model along with an updated state containing any new
     type definitions.
     """
     if not schema:
-        return "Any", state
+        return AnyAnnotation(), state
 
     schema_type = schema.get("type")
     nullable = bool(schema.get("nullable"))
     if schema_type == "null":
-        return "None", state
+        return NamedAnnotation("None"), state
 
     ref = schema.get("$ref")
     if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
@@ -382,10 +397,10 @@ def _schema_to_type(
         return _ensure_component(state, component)
 
     if "const" in schema:
-        return f"Literal[{schema['const']!r}]", state
+        return LiteralAnnotation((schema["const"],)), state
 
     if schema_type == "string" and schema.get("format") == "binary":
-        return "bytes", state
+        return NamedAnnotation("bytes"), state
 
     if "enum" in schema and isinstance(schema["enum"], list):
         return _schema_enum_to_type(state, schema, hint, component_name)
@@ -414,10 +429,15 @@ def _schema_to_type(
         return _schema_object_to_type(state, schema, hint)
 
     base = _PRIMITIVES.get(str(schema_type), "Any")
-    return _nullable(base, nullable), state
+    annotation: TypeAnnotation = (
+        AnyAnnotation() if base == "Any" else NamedAnnotation(base)
+    )
+    return _nullable(annotation, nullable), state
 
 
-def _schema_type(state: _TypeState, schema: dict, hint: str) -> tuple[str, _TypeState]:
+def _schema_type(
+    state: _TypeState, schema: dict, hint: str
+) -> tuple[TypeAnnotation, _TypeState]:
     return _schema_to_type(state, schema or {}, hint)
 
 
@@ -507,10 +527,10 @@ def _bucket_type(
     state: _TypeState,
     bucket: _ParameterBucket,
     hint: str,
-    default: str = "dict[str, Any]",
-) -> tuple[str, _TypeState]:
+    default: TypeAnnotation | None = None,
+) -> tuple[TypeAnnotation, _TypeState]:
     if not bucket.props:
-        return default, state
+        return default or DictAnnotation(NamedAnnotation("str"), AnyAnnotation()), state
     return _schema_type(
         state,
         {
@@ -526,11 +546,11 @@ def _request_body_type(
     state: _TypeState,
     operation: dict,
     hint: str,
-) -> tuple[str | None, bool, _TypeState]:
+) -> tuple[TypeAnnotation | None, bool, _TypeState]:
     """
     Determines the type of the request body for an operation, if any.
     Returns a tuple of (body_type, required, updated_state).
-    The body_type is a string representing the Python type annotation for the request body.
+    The body_type is the Python type annotation model for the request body.
     The required flag indicates whether the request body is required.
     The updated_state is the new _TypeState after processing the request body schema.
     """
@@ -549,9 +569,9 @@ def _request_body_type(
 
 def _response_type(
     state: _TypeState, operation: dict, hint: str
-) -> tuple[str, _TypeState]:
+) -> tuple[TypeAnnotation, _TypeState]:
     responses = safe_get(operation, "responses", type=dict) or {}
-    response_types: list[str] = []
+    response_types: list[TypeAnnotation] = []
 
     for code in sorted(responses.keys()):
         if not code.startswith("2"):
@@ -563,12 +583,12 @@ def _response_type(
         )
         if schema is not None:
             if not schema:
-                response_types.append("None")
+                response_types.append(NamedAnnotation("None"))
             else:
                 response_type, state = _schema_type(state, schema, hint)
                 response_types.append(response_type)
         else:
-            response_types.append("None")
+            response_types.append(NamedAnnotation("None"))
     return _union(response_types), state
 
 

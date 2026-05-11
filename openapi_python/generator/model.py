@@ -1,12 +1,60 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TypeAlias
+
+
+@dataclass(frozen=True)
+class AnyAnnotation:
+    pass
+
+
+@dataclass(frozen=True)
+class DictAnnotation:
+    key: TypeAnnotation
+    value: TypeAnnotation
+
+
+@dataclass(frozen=True)
+class ListAnnotation:
+    item: TypeAnnotation
+
+
+@dataclass(frozen=True)
+class LiteralAnnotation:
+    values: tuple[object, ...]
+
+
+@dataclass(frozen=True)
+class NamedAnnotation:
+    name: str
+
+
+@dataclass(frozen=True)
+class TupleAnnotation:
+    items: tuple[TypeAnnotation, ...]
+
+
+@dataclass(frozen=True)
+class UnionAnnotation:
+    items: tuple[TypeAnnotation, ...]
+
+
+TypeAnnotation: TypeAlias = (
+    AnyAnnotation
+    | DictAnnotation
+    | ListAnnotation
+    | LiteralAnnotation
+    | NamedAnnotation
+    | TupleAnnotation
+    | UnionAnnotation
+)
 
 
 @dataclass(frozen=True)
 class FieldDef:
     name: str
-    annotation: str
+    annotation: TypeAnnotation
     required: bool
 
 
@@ -19,7 +67,7 @@ class TypedDictDef:
 @dataclass(frozen=True)
 class TypeAliasDef:
     name: str
-    annotation: str
+    annotation: TypeAnnotation
 
 
 @dataclass(frozen=True)
@@ -34,15 +82,15 @@ class OperationDef:
     route_literal: str
     symbol: str
     protocol_name: str
-    params_type: str
+    params_type: TypeAnnotation
     params_required: bool
-    query_type: str
+    query_type: TypeAnnotation
     query_required: bool
-    headers_type: str
+    headers_type: TypeAnnotation
     headers_required: bool
-    body_type: str | None
+    body_type: TypeAnnotation | None
     body_required: bool
-    response_type: str
+    response_type: TypeAnnotation
 
 
 @dataclass(frozen=True)
