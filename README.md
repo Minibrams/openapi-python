@@ -172,17 +172,3 @@ client = Client(
 )
 book = client.get("/books/{book_id}")(params={"book_id": 1})
 ```
-
-## Releases
-
-Releases are published from the protected `releases` branch. The package version is set manually in `pyproject.toml`, and pushing a release commit to `releases` triggers the GitHub Actions release workflow. The workflow creates the matching `vX.Y.Z` tag after checks pass.
-
-Release steps:
-
-```bash
-# 1. Update project.version in pyproject.toml, then commit that change.
-uv run python scripts/release.py --version 0.1.0
-
-# 2. If checks pass, push the current commit to the releases branch.
-uv run python scripts/release.py --version 0.1.0 --push-release-branch
-```

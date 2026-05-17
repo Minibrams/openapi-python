@@ -73,16 +73,11 @@ def require_tag_available(tag: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Prepare and optionally publish from the releases branch."
+        description="Run local checks and build distributions before releasing."
     )
     parser.add_argument(
         "--version",
         help="Expected version. Defaults to the version in pyproject.toml.",
-    )
-    parser.add_argument(
-        "--push-release-branch",
-        action="store_true",
-        help="Push the current commit to origin/releases after release checks pass.",
     )
     args = parser.parse_args()
 
@@ -109,13 +104,8 @@ def main() -> None:
     run(["uv", "run", "pytest", "-n", "auto"])
     run(["uv", "build"])
 
-    if args.push_release_branch:
-        run(["git", "push", "origin", "HEAD:releases"])
-        print("Pushed current commit to origin/releases.")
-        print("GitHub Actions will create the release tag and publish after approval.")
-    else:
-        print(f"Release checks passed for {tag}.")
-        print("Publish with: git push origin HEAD:releases")
+    print(f"Release checks passed for {tag}.")
+    print("Publish with: git push origin HEAD:releases")
 
 
 if __name__ == "__main__":
