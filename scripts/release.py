@@ -7,8 +7,22 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION_PATTERN = re.compile(
+    r"(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
+    r"(?:(?P<stage>a|b|rc)(?P<stage_number>\d+))?"
+)
+STAGE_ORDER = {"a": 0, "b": 1, "rc": 2, None: 3}
+
+
+class Version(NamedTuple):
+    major: int
+    minor: int
+    patch: int
+    stage: int
+    stage_number: int
 
 
 def run(
@@ -30,10 +44,36 @@ def project_version() -> str:
         return tomllib.load(file)["project"]["version"]
 
 
-def require_supported_version(version: str) -> None:
-    if not re.fullmatch(r"\d+\.\d+\.\d+((a|b|rc)\d+)?", version):
+def parse_version(version: str) -> Version | None:
+    match = VERSION_PATTERN.fullmatch(version)
+    if not match:
+        return None
+    stage = match.group("stage")
+    stage_number = match.group("stage_number")
+    return Version(
+        int(match.group("major")),
+        int(match.group("minor")),
+        int(match.group("patch")),
+        STAGE_ORDER[stage],
+        int(stage_number or 0),
+    )
+
+
+def require_supported_version(version: str) -> Version:
+    parsed = parse_version(version)
+    if parsed is None:
         print(f"Unsupported release version: {version!r}")
         print("Expected X.Y.Z, X.Y.ZaN, X.Y.ZbN, or X.Y.ZrcN.")
+        sys.exit(1)
+    return parsed
+
+
+def require_next_version(current: str, next_version: str) -> None:
+    if require_supported_version(next_version) <= require_supported_version(current):
+        print(
+            f"Next version must be higher than the current version: "
+            f"{next_version} <= {current}."
+        )
         sys.exit(1)
 
 
@@ -44,6 +84,15 @@ def require_clean_worktree() -> None:
             "Release requires a clean git worktree. Commit or stash these changes first:"
         )
         print(status)
+        sys.exit(1)
+
+
+def require_branch(branch: str) -> None:
+    current = run(["git", "branch", "--show-current"], capture=True).stdout.strip()
+    if current != branch:
+        print(
+            f"Release must be run from {branch!r}, but current branch is {current!r}."
+        )
         sys.exit(1)
 
 
@@ -71,28 +120,41 @@ def require_tag_available(tag: str) -> None:
         sys.exit(1)
 
 
+def commit_version_bump(tag: str) -> None:
+    run(["git", "add", "pyproject.toml", "uv.lock"])
+    staged = run(["git", "diff", "--cached", "--name-only"], capture=True).stdout
+    if not staged.strip():
+        print("Version bump did not change pyproject.toml or uv.lock.")
+        sys.exit(1)
+    run(["git", "commit", "-m", f"Release {tag}"])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run local checks and build distributions before releasing."
     )
     parser.add_argument(
         "--version",
-        help="Expected version. Defaults to the version in pyproject.toml.",
+        help="Next release version. Prompts when omitted.",
     )
     args = parser.parse_args()
 
-    version = project_version()
-    require_supported_version(version)
-    if args.version and args.version != version:
-        print(
-            f"Expected version {args.version}, but pyproject.toml contains {version}."
-        )
+    current_version = project_version()
+    require_supported_version(current_version)
+    print(f"Current version: {current_version}")
+
+    next_version = args.version or input("Next version: ").strip()
+    if not next_version:
+        print("A next version is required.")
         sys.exit(1)
 
-    tag = f"v{version}"
+    require_next_version(current_version, next_version)
+    tag = f"v{next_version}"
 
     require_clean_worktree()
+    require_branch("main")
     require_tag_available(tag)
+    run(["uv", "version", next_version, "--no-sync"])
 
     dist = ROOT / "dist"
     if dist.exists():
@@ -104,8 +166,12 @@ def main() -> None:
     run(["uv", "run", "pytest", "-n", "auto"])
     run(["uv", "build"])
 
+    commit_version_bump(tag)
+    run(["git", "push", "origin", "main"])
+    run(["git", "push", "origin", "HEAD:releases"])
+
     print(f"Release checks passed for {tag}.")
-    print("Publish with: git push origin HEAD:releases")
+    print("Release pushed to main and releases.")
 
 
 if __name__ == "__main__":
