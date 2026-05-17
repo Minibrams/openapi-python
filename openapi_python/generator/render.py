@@ -225,7 +225,15 @@ def _format_type_definition(defn: TypeAliasDef | TypedDictDef) -> str:
             return _format_typeddict(defn)
 
 
-def _call_parameters(op: OperationDef) -> dict[str, str]:
+def _call_parameters(op: OperationDef, *, generate_requests: bool) -> dict[str, str]:
+    if not generate_requests:
+        return {
+            "params": "params: dict[str, Any] | None = None",
+            "query": "query: dict[str, Any] | None = None",
+            "headers": "headers: dict[str, Any] | None = None",
+            "body": "body: object | None = None",
+        }
+
     params = "params: " + _render_annotation(op.params_type)
     if not op.params_required:
         params += " | None = None"
@@ -256,13 +264,22 @@ def _protocol_name(op: OperationDef, *, is_async: bool = False) -> str:
     return f"Async{op.protocol_name}" if is_async else op.protocol_name
 
 
-def _protocol_block(op: OperationDef, *, is_async: bool = False) -> str:
+def _protocol_block(
+    op: OperationDef,
+    *,
+    generate_requests: bool,
+    generate_responses: bool,
+    is_async: bool = False,
+) -> str:
     return _render_template(
         "protocol.py.j2",
         op=op,
         is_async=is_async,
         protocol_name=_protocol_name(op, is_async=is_async),
-        call_parameters=_call_parameters(op),
+        call_parameters=_call_parameters(op, generate_requests=generate_requests),
+        response_type=(
+            _render_annotation(op.response_type) if generate_responses else "Any"
+        ),
     )
 
 
@@ -287,8 +304,8 @@ def _fallback_method_block(
     )
 
 
-def _render_types(spec: NormalizedSpec) -> str:
-    aliases = (*_route_aliases(spec), *spec.aliases)
+def _render_types(spec: NormalizedSpec, *, generate_routes: bool) -> str:
+    aliases = (*_route_aliases(spec, generate_routes=generate_routes), *spec.aliases)
     type_definitions = _order_type_definitions(aliases, spec.typed_dicts)
     blocks = [_format_enum(item) for item in spec.enums] + [
         _format_type_definition(item) for item in type_definitions
@@ -303,7 +320,12 @@ def _literal_annotation(values: set[str]) -> LiteralAnnotation:
     return LiteralAnnotation(tuple(sorted(values)))
 
 
-def _route_aliases(spec: NormalizedSpec) -> tuple[TypeAliasDef, ...]:
+def _route_aliases(
+    spec: NormalizedSpec, *, generate_routes: bool
+) -> tuple[TypeAliasDef, ...]:
+    if not generate_routes:
+        return (TypeAliasDef(name="RouteLiteral", annotation=NamedAnnotation("str")),)
+
     routes_by_method: dict[str, set[str]] = {}
     for op in spec.operations:
         routes_by_method.setdefault(op.method.upper(), set()).add(op.route_literal)
@@ -331,28 +353,50 @@ def _route_aliases(spec: NormalizedSpec) -> tuple[TypeAliasDef, ...]:
     return tuple(aliases)
 
 
-def _render_transport(spec: NormalizedSpec, *, transport_mode: str) -> str:
+def _render_transport(spec: NormalizedSpec, *, protocol_only: bool) -> str:
     return _render_template(
         "transport.py.j2",
-        typing_imports=(
-            "TYPE_CHECKING, Protocol" if transport_mode == "default" else "Protocol"
-        ),
-        include_default_transport=transport_mode == "default",
+        typing_imports="Protocol" if protocol_only else "TYPE_CHECKING, Protocol",
+        include_default_transport=not protocol_only,
     )
 
 
-def _render_client(spec: NormalizedSpec, *, transport_mode: str) -> str:
+def _render_client(
+    spec: NormalizedSpec,
+    *,
+    protocol_only: bool,
+    generate_routes: bool,
+    generate_requests: bool,
+    generate_responses: bool,
+) -> str:
     protocols: list[str] = []
     async_protocols: list[str] = []
     method_overloads: dict[str, list[str]] = {}
     async_method_overloads: dict[str, list[str]] = {}
     for op in spec.operations:
-        protocols.append(_protocol_block(op))
-        async_protocols.append(_protocol_block(op, is_async=True))
-        method_overloads.setdefault(op.method, []).append(_method_overload_line(op))
-        async_method_overloads.setdefault(op.method, []).append(
-            _method_overload_line(op, is_async=True)
-        )
+        if generate_routes:
+            protocols.append(
+                _protocol_block(
+                    op,
+                    generate_requests=generate_requests,
+                    generate_responses=generate_responses,
+                )
+            )
+            async_protocols.append(
+                _protocol_block(
+                    op,
+                    generate_requests=generate_requests,
+                    generate_responses=generate_responses,
+                    is_async=True,
+                )
+            )
+            method_overloads.setdefault(op.method, []).append(_method_overload_line(op))
+            async_method_overloads.setdefault(op.method, []).append(
+                _method_overload_line(op, is_async=True)
+            )
+        else:
+            method_overloads.setdefault(op.method, [])
+            async_method_overloads.setdefault(op.method, [])
 
     method_blocks: list[str] = []
     for method in sorted(method_overloads):
@@ -372,7 +416,7 @@ def _render_client(spec: NormalizedSpec, *, transport_mode: str) -> str:
             )
         )
 
-    if transport_mode == "default":
+    if not protocol_only:
         transport_imports = (
             "from .transport import AsyncTransport, DefaultAsyncTransport, "
             "DefaultTransport, Transport"
@@ -406,12 +450,21 @@ def render_package(
     spec: NormalizedSpec,
     extensions: GeneratorExtensions | None = None,
     *,
-    transport_mode: str = "default",
+    protocol_only: bool = False,
+    generate_routes: bool = True,
+    generate_requests: bool = True,
+    generate_responses: bool = True,
 ) -> list[GeneratedArtifact]:
     context = {
-        "types": _render_types(spec),
-        "transport": _render_transport(spec, transport_mode=transport_mode),
-        "client": _render_client(spec, transport_mode=transport_mode),
+        "types": _render_types(spec, generate_routes=generate_routes),
+        "transport": _render_transport(spec, protocol_only=protocol_only),
+        "client": _render_client(
+            spec,
+            protocol_only=protocol_only,
+            generate_routes=generate_routes,
+            generate_requests=generate_requests,
+            generate_responses=generate_responses,
+        ),
     }
 
     if extensions:
@@ -419,7 +472,7 @@ def render_package(
             context = hook(spec, context)
 
     init_content = _render_template(
-        "init.py.j2", include_default_transport=transport_mode == "default"
+        "init.py.j2", include_default_transport=not protocol_only
     )
 
     return [

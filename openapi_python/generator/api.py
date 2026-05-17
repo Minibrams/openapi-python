@@ -19,7 +19,10 @@ class GenerationRequest:
     package_name: str = "my_client"
     overwrite: bool = False
     verify_ssl: bool = True
-    transport_mode: str = "default"
+    protocol_only: bool = False
+    generate_routes: bool = True
+    generate_requests: bool = True
+    generate_responses: bool = True
     extensions: GeneratorExtensions | None = None
     spec_json: str | None = None
 
@@ -38,8 +41,6 @@ def generate_client(request: GenerationRequest) -> GenerationResult:
         raise invalid_request("Exactly one of spec_source or spec_json is required")
     if not request.package_name:
         raise invalid_request("package_name is required")
-    if request.transport_mode not in {"default", "protocol-only"}:
-        raise invalid_request("transport_mode must be 'default' or 'protocol-only'")
 
     if request.spec_json is not None:
         document = load_openapi_json(request.spec_json)
@@ -57,7 +58,12 @@ def generate_client(request: GenerationRequest) -> GenerationResult:
             normalized = candidate
 
     artifacts = render_package(
-        normalized, request.extensions, transport_mode=request.transport_mode
+        normalized,
+        request.extensions,
+        protocol_only=request.protocol_only,
+        generate_routes=request.generate_routes,
+        generate_requests=request.generate_requests,
+        generate_responses=request.generate_responses,
     )
     written = write_artifacts(
         output_dir=request.output_dir, artifacts=artifacts, overwrite=request.overwrite

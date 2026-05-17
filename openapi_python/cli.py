@@ -30,10 +30,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Disable SSL certificate verification for URL specs",
     )
     generate.add_argument(
-        "--transport-mode",
-        choices=["default", "protocol-only"],
-        default="default",
-        help="Generation mode for transport integration",
+        "--protocol-only",
+        action="store_true",
+        help="Require supplied transports instead of generating built-in httpx transports",
+    )
+    generate.add_argument(
+        "--routes",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Generate route literal types and route-specific client overloads (DEFAULT: True)",
+    )
+    generate.add_argument(
+        "--requests",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Generate typed params, query, header, and body protocol arguments (DEFAULT: True)",
+    )
+    generate.add_argument(
+        "--responses",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Generate typed protocol response values (DEFAULT: True)",
     )
     return parser
 
@@ -53,7 +70,10 @@ def main(argv: list[str] | None = None) -> int:
         package_name=args.package,
         overwrite=args.overwrite,
         verify_ssl=not args.no_ssl,
-        transport_mode=args.transport_mode,
+        protocol_only=args.protocol_only,
+        generate_routes=args.routes,
+        generate_requests=args.requests,
+        generate_responses=args.responses,
     )
     result = try_generate_client(request)
 

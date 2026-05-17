@@ -24,8 +24,8 @@ Generate a client from an OpenAPI spec in `openapi.json`:
 # Types + HTTP transport
 uv run openapi-python generate --spec ./openapi.json --out ./generated
 
-# Types
-uv run openapi-python generate --spec ./openapi.json --out ./generated --transport-mode protocol-only
+# Types + custom transport protocol
+uv run openapi-python generate --spec ./openapi.json --out ./generated --protocol-only
 ```
 
 ... or programatically:
@@ -87,7 +87,9 @@ book = client.get("/books/{book_id}")(params={"book_id": 1})
 
 Generated clients expose a transport protocol. You can plug in your own transport while keeping route-level typing guarantees.
 
-Use `--transport-mode protocol-only` to generate clients that require a supplied transport and do not emit the built-in `httpx` transport classes. The default `--transport-mode default` includes `DefaultTransport` and `DefaultAsyncTransport`, which require the `httpx` extra when instantiated.
+Use `--protocol-only` to generate clients that require a supplied transport and do not emit the built-in `httpx` transport classes. By default, generated clients include `DefaultTransport` and `DefaultAsyncTransport`, which require the `httpx` extra when instantiated.
+
+Protocol typing can be relaxed independently with `--no-routes`, `--no-requests`, and `--no-responses`. Those flags replace the corresponding route literals, request payload types, or response types with broad catch-all types.
 
 ### Built-in `httpx` transport
 
@@ -128,7 +130,7 @@ uv run openapi-python generate \
   --spec ./openapi.json \
   --out ./generated \
   --package my_client \
-  --transport-mode protocol-only
+  --protocol-only
 ```
 
 Then provide an object that satisfies the generated `Transport` protocol:
