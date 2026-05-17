@@ -157,10 +157,22 @@ def _alias_dependencies(defn: TypeAliasDef, names: set[str]) -> set[str]:
     return dependencies
 
 
-def _order_aliases(defns: tuple[TypeAliasDef, ...]) -> list[TypeAliasDef]:
-    by_name = {item.name: item for item in defns}
+def _type_dependencies(defn: TypeAliasDef | TypedDictDef, names: set[str]) -> set[str]:
+    match defn:
+        case TypeAliasDef():
+            return _alias_dependencies(defn, names)
+        case TypedDictDef():
+            return _typed_dict_dependencies(defn, names)
+
+
+def _order_type_definitions(
+    aliases: tuple[TypeAliasDef, ...], typed_dicts: tuple[TypedDictDef, ...]
+) -> list[TypeAliasDef | TypedDictDef]:
+    by_name: dict[str, TypeAliasDef | TypedDictDef] = {
+        item.name: item for item in (*aliases, *typed_dicts)
+    }
     names = set(by_name)
-    ordered: list[TypeAliasDef] = []
+    ordered: list[TypeAliasDef | TypedDictDef] = []
     temporary: set[str] = set()
     permanent: set[str] = set()
 
@@ -168,7 +180,7 @@ def _order_aliases(defns: tuple[TypeAliasDef, ...]) -> list[TypeAliasDef]:
         if name in permanent or name in temporary:
             return
         temporary.add(name)
-        for dependency in sorted(_alias_dependencies(by_name[name], names)):
+        for dependency in sorted(_type_dependencies(by_name[name], names)):
             visit(dependency)
         temporary.remove(name)
         permanent.add(name)
@@ -176,29 +188,16 @@ def _order_aliases(defns: tuple[TypeAliasDef, ...]) -> list[TypeAliasDef]:
 
     for name in sorted(by_name):
         visit(name)
+
     return ordered
 
 
-def _order_typeddicts(defns: tuple[TypedDictDef, ...]) -> list[TypedDictDef]:
-    by_name = {item.name: item for item in defns}
-    names = set(by_name)
-    ordered: list[TypedDictDef] = []
-    temporary: set[str] = set()
-    permanent: set[str] = set()
-
-    def visit(name: str) -> None:
-        if name in permanent or name in temporary:
-            return
-        temporary.add(name)
-        for dependency in sorted(_typed_dict_dependencies(by_name[name], names)):
-            visit(dependency)
-        temporary.remove(name)
-        permanent.add(name)
-        ordered.append(by_name[name])
-
-    for name in sorted(by_name):
-        visit(name)
-    return ordered
+def _format_type_definition(defn: TypeAliasDef | TypedDictDef) -> str:
+    match defn:
+        case TypeAliasDef():
+            return _format_alias(defn)
+        case TypedDictDef():
+            return _format_typeddict(defn)
 
 
 def _call_parameters(op: OperationDef) -> dict[str, str]:
@@ -273,12 +272,11 @@ def _fallback_method_block(
 
 
 def _render_types(spec: NormalizedSpec) -> str:
-    aliases = (*_route_aliases(spec), *_order_aliases(spec.aliases))
-    blocks = (
-        [_format_enum(item) for item in spec.enums]
-        + [_format_alias(alias) for alias in aliases]
-        + [_format_typeddict(item) for item in _order_typeddicts(spec.typed_dicts)]
-    )
+    aliases = (*_route_aliases(spec), *spec.aliases)
+    type_definitions = _order_type_definitions(aliases, spec.typed_dicts)
+    blocks = [_format_enum(item) for item in spec.enums] + [
+        _format_type_definition(item) for item in type_definitions
+    ]
     return _render_template(
         "types.py.j2",
         type_blocks="\n".join(blocks).strip() + "\n",

@@ -46,3 +46,9 @@ def test_contract_types(contract_dir: Path) -> None:
         cwd=contract_dir,
     )
     assert typecheck.returncode == 0, _output(typecheck)
+
+    generated_types = _run(
+        ["ty", "check", "generated/my_client/types.py", "--python-version", "3.12"],
+        cwd=contract_dir,
+    )
+    assert generated_types.returncode == 0, _output(generated_types)
