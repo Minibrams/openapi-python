@@ -8,7 +8,7 @@ from .extensions import GeneratorExtensions
 from .loader import load_openapi, load_openapi_json
 from .model import NormalizedSpec
 from .normalize import normalize_openapi
-from .render import render_package
+from .render import render_package, rendered_type_definition_count
 from .write import write_artifacts
 
 
@@ -73,7 +73,12 @@ def generate_client(request: GenerationRequest) -> GenerationResult:
         success=True,
         written_files=tuple(written),
         operations=len(normalized.operations),
-        type_definitions=len(normalized.aliases) + len(normalized.typed_dicts),
+        type_definitions=rendered_type_definition_count(
+            normalized,
+            generate_routes=request.generate_routes,
+            generate_requests=request.generate_requests,
+            generate_responses=request.generate_responses,
+        ),
         diagnostics=(),
     )
 

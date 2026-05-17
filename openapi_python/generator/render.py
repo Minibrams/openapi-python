@@ -283,10 +283,13 @@ def _protocol_block(
     )
 
 
-def _method_overload_line(op: OperationDef, *, is_async: bool = False) -> str:
+def _method_overload_line(
+    op: OperationDef, *, return_type: str, is_async: bool = False
+) -> str:
     return _render_template(
         "method_overload.py.j2",
         op=op,
+        return_type=return_type,
         protocol_name=_protocol_name(op, is_async=is_async),
     )
 
@@ -304,15 +307,102 @@ def _fallback_method_block(
     )
 
 
-def _render_types(spec: NormalizedSpec, *, generate_routes: bool) -> str:
-    aliases = (*_route_aliases(spec, generate_routes=generate_routes), *spec.aliases)
-    type_definitions = _order_type_definitions(aliases, spec.typed_dicts)
-    blocks = [_format_enum(item) for item in spec.enums] + [
+def _included_annotations(
+    spec: NormalizedSpec, *, generate_requests: bool, generate_responses: bool
+) -> tuple[TypeAnnotation, ...]:
+    """
+    Returns the set of type annotations that be included
+    in the rendered output.
+    """
+    roots: list[TypeAnnotation] = []
+    for op in spec.operations:
+        if generate_requests:
+            roots.extend((op.params_type, op.query_type, op.headers_type))
+            if op.body_type is not None:
+                roots.append(op.body_type)
+        if generate_responses:
+            roots.append(op.response_type)
+    return tuple(roots)
+
+
+def _used_type_names(
+    spec: NormalizedSpec, *, generate_requests: bool, generate_responses: bool
+) -> set[str]:
+    """
+    Returns the set of type definition names that are transitively referenced by
+    the client protocols.
+    """
+    by_name: dict[str, TypeAliasDef | TypedDictDef | EnumDef] = {
+        item.name: item for item in (*spec.aliases, *spec.typed_dicts, *spec.enums)
+    }
+    all_names = set(by_name)
+    used: set[str] = set()
+    pending: list[str] = []
+
+    for annotation in _included_annotations(
+        spec,
+        generate_requests=generate_requests,
+        generate_responses=generate_responses,
+    ):
+        pending.extend(_annotation_dependencies(annotation, all_names) - used)
+
+    while pending:
+        name = pending.pop()
+        if name in used:
+            continue
+        used.add(name)
+        item = by_name[name]
+        match item:
+            case TypeAliasDef() | TypedDictDef():
+                pending.extend(_type_dependencies(item, all_names) - used)
+            case EnumDef():
+                pass
+    return used
+
+
+def _render_types(
+    spec: NormalizedSpec,
+    *,
+    generate_routes: bool,
+    generate_requests: bool,
+    generate_responses: bool,
+) -> str:
+    route_aliases = _route_aliases(spec, generate_routes=generate_routes)
+    used_names = _used_type_names(
+        spec,
+        generate_requests=generate_requests,
+        generate_responses=generate_responses,
+    )
+    aliases = tuple(item for item in spec.aliases if item.name in used_names)
+    typed_dicts = tuple(item for item in spec.typed_dicts if item.name in used_names)
+    enums = tuple(item for item in spec.enums if item.name in used_names)
+    type_definitions = _order_type_definitions((*route_aliases, *aliases), typed_dicts)
+    blocks = [_format_enum(item) for item in enums] + [
         _format_type_definition(item) for item in type_definitions
     ]
     return _render_template(
         "types.py.j2",
         type_blocks="\n".join(blocks).strip() + "\n",
+    )
+
+
+def rendered_type_definition_count(
+    spec: NormalizedSpec,
+    *,
+    generate_routes: bool,
+    generate_requests: bool,
+    generate_responses: bool,
+) -> int:
+    used_names = _used_type_names(
+        spec,
+        generate_requests=generate_requests,
+        generate_responses=generate_responses,
+    )
+    return (
+        len(_route_aliases(spec, generate_routes=generate_routes))
+        + sum(1 for item in spec.aliases if item.name in used_names)
+        + sum(1 for item in spec.typed_dicts if item.name in used_names)
+        + sum(1 for item in spec.enums if item.name in used_names)
     )
 
 
@@ -393,13 +483,32 @@ def _render_client(
                     is_async=True,
                 )
             )
-            method_overloads.setdefault(op.method, []).append(_method_overload_line(op))
+            method_overloads.setdefault(op.method, []).append(
+                _method_overload_line(
+                    op, return_type=_protocol_name(op), is_async=False
+                )
+            )
             async_method_overloads.setdefault(op.method, []).append(
-                _method_overload_line(op, is_async=True)
+                _method_overload_line(
+                    op,
+                    return_type=_protocol_name(op, is_async=True),
+                    is_async=True,
+                )
             )
         else:
-            method_overloads.setdefault(op.method, [])
-            async_method_overloads.setdefault(op.method, [])
+            overloads = method_overloads.setdefault(op.method, [])
+            async_overloads = async_method_overloads.setdefault(op.method, [])
+            if generate_routes:
+                overloads.append(
+                    _method_overload_line(
+                        op, return_type="Callable[..., object]", is_async=False
+                    )
+                )
+                async_overloads.append(
+                    _method_overload_line(
+                        op, return_type="Callable[..., Awaitable[Any]]", is_async=True
+                    )
+                )
 
     method_blocks: list[str] = []
     for method in sorted(method_overloads):
@@ -459,7 +568,12 @@ def render_package(
     generate_responses: bool = True,
 ) -> list[GeneratedArtifact]:
     context = {
-        "types": _render_types(spec, generate_routes=generate_routes),
+        "types": _render_types(
+            spec,
+            generate_routes=generate_routes,
+            generate_requests=generate_requests,
+            generate_responses=generate_responses,
+        ),
         "transport": _render_transport(spec, protocol_only=protocol_only),
         "client": _render_client(
             spec,
