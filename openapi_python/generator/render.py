@@ -373,8 +373,11 @@ def _render_client(
     async_protocols: list[str] = []
     method_overloads: dict[str, list[str]] = {}
     async_method_overloads: dict[str, list[str]] = {}
+    generate_operation_protocols = generate_routes and (
+        generate_requests or generate_responses
+    )
     for op in spec.operations:
-        if generate_routes:
+        if generate_operation_protocols:
             protocols.append(
                 _protocol_block(
                     op,
