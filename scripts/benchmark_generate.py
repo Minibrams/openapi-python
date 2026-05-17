@@ -50,6 +50,32 @@ def _run_once(
         shutil.rmtree(output_dir, ignore_errors=True)
 
 
+def _run_size_once(
+    *,
+    generate_client: Any,
+    generation_request: Any,
+    spec_json: str,
+    package_name: str,
+) -> tuple[dict[str, int], Any]:
+    output_dir = Path(tempfile.mkdtemp(prefix="openapi-python-size-"))
+    try:
+        result = generate_client(
+            generation_request(
+                output_dir=output_dir,
+                spec_json=spec_json,
+                package_name=package_name,
+                overwrite=True,
+            )
+        )
+        file_sizes = {
+            path.relative_to(output_dir).as_posix(): path.stat().st_size
+            for path in result.written_files
+        }
+        return file_sizes, result
+    finally:
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+
 def run_benchmark(args: argparse.Namespace) -> int:
     spec_json = _load_spec(args.spec)
     generation_request, generate_client = _load_generator(args.package_path)
@@ -93,6 +119,35 @@ def run_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_size_benchmark(args: argparse.Namespace) -> int:
+    spec_json = _load_spec(args.spec)
+    generation_request, generate_client = _load_generator(args.package_path)
+
+    file_sizes, result = _run_size_once(
+        generate_client=generate_client,
+        generation_request=generation_request,
+        spec_json=spec_json,
+        package_name=args.package,
+    )
+
+    payload = {
+        "files_bytes": file_sizes,
+        "operations": result.operations,
+        "total_bytes": sum(file_sizes.values()),
+        "type_definitions": result.type_definitions,
+    }
+
+    encoded = json.dumps(payload, indent=2, sort_keys=True)
+    if args.output:
+        args.output.write_text(encoded + "\n", encoding="utf-8")
+    print(encoded)
+    return 0
+
+
+def _format_bytes(value: float) -> str:
+    return f"{value:,.0f} bytes"
+
+
 def compare_benchmarks(args: argparse.Namespace) -> int:
     baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
     candidate = json.loads(args.candidate.read_text(encoding="utf-8"))
@@ -116,6 +171,29 @@ def compare_benchmarks(args: argparse.Namespace) -> int:
     return 0
 
 
+def compare_size_benchmarks(args: argparse.Namespace) -> int:
+    baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+    candidate = json.loads(args.candidate.read_text(encoding="utf-8"))
+
+    baseline_bytes = float(baseline["total_bytes"])
+    candidate_bytes = float(candidate["total_bytes"])
+    allowed_bytes = baseline_bytes * (1 + args.max_regression)
+    change = (candidate_bytes - baseline_bytes) / baseline_bytes
+
+    print(f"baseline total:  {_format_bytes(baseline_bytes)}")
+    print(f"candidate total: {_format_bytes(candidate_bytes)}")
+    print(f"change:          {change:+.2%}")
+    print(f"limit:           +{args.max_regression:.2%}")
+
+    if candidate_bytes > allowed_bytes:
+        print(
+            "generated file size regressed beyond the configured limit",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="benchmark_generate.py",
@@ -132,11 +210,26 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--output", type=Path)
     run.set_defaults(func=run_benchmark)
 
+    size = subcommands.add_parser("size", help="Measure generated file sizes")
+    size.add_argument("--spec", type=Path, required=True)
+    size.add_argument("--package-path", type=Path, default=Path.cwd())
+    size.add_argument("--package", default="my_client")
+    size.add_argument("--output", type=Path)
+    size.set_defaults(func=run_size_benchmark)
+
     compare = subcommands.add_parser("compare", help="Compare two benchmark results")
     compare.add_argument("--baseline", type=Path, required=True)
     compare.add_argument("--candidate", type=Path, required=True)
     compare.add_argument("--max-regression", type=float, default=0.02)
     compare.set_defaults(func=compare_benchmarks)
+
+    compare_size = subcommands.add_parser(
+        "compare-size", help="Compare two generated file size results"
+    )
+    compare_size.add_argument("--baseline", type=Path, required=True)
+    compare_size.add_argument("--candidate", type=Path, required=True)
+    compare_size.add_argument("--max-regression", type=float, default=0.02)
+    compare_size.set_defaults(func=compare_size_benchmarks)
 
     return parser
 

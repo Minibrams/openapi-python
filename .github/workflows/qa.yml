@@ -82,3 +82,21 @@ jobs:
           uv run python scripts/benchmark_generate.py compare --baseline
           .benchmark/base.json --candidate .benchmark/current.json
           --max-regression 0.02
+
+      - name: Measure generated file sizes (base)
+        run: >
+          uv run python scripts/benchmark_generate.py size --package-path
+          .benchmark/base --spec tests/performance/nautobot.json.gz
+          --output .benchmark/base-size.json
+
+      - name: Measure generated file sizes (current)
+        run: >
+          uv run python scripts/benchmark_generate.py size --package-path .
+          --spec tests/performance/nautobot.json.gz
+          --output .benchmark/current-size.json
+
+      - name: Check generated file size regression
+        run: >
+          uv run python scripts/benchmark_generate.py compare-size --baseline
+          .benchmark/base-size.json --candidate .benchmark/current-size.json
+          --max-regression 0.02

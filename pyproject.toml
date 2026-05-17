@@ -42,7 +42,7 @@ dev = [
     "python-multipart>=0.0.20",
     "ruff>=0.9.10",
     "twine>=6.1.0",
-    "ty>=0.0.34",
+    "ty>=0.0.37",
     "uvicorn>=0.34.0",
 ]
 

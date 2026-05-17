@@ -54,6 +54,22 @@ def _field_annotation(field: FieldDef) -> str:
     return annotation
 
 
+def _class_field_annotation(field: FieldDef, total_optional: bool) -> str:
+    annotation = _render_annotation(field.annotation)
+    if not field.required and not total_optional:
+        annotation = f"NotRequired[{annotation}]"
+    return annotation
+
+
+def _supports_typeddict_class_syntax(defn: TypedDictDef) -> bool:
+    return all(
+        field.name.isidentifier()
+        and not keyword.iskeyword(field.name)
+        and not field.name.startswith("__")
+        for field in defn.fields
+    )
+
+
 _TEMPLATE_DIR = Path(__file__).with_name("templates")
 _JINJA_ENV = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
@@ -64,6 +80,7 @@ _JINJA_ENV = Environment(
 _JINJA_ENV.filters["repr"] = repr
 _JINJA_ENV.filters["annotation"] = _render_annotation
 _JINJA_ENV.filters["field_annotation"] = _field_annotation
+_JINJA_ENV.filters["class_field_annotation"] = _class_field_annotation
 
 
 def _render_template(name: str, **context: object) -> str:
@@ -76,7 +93,15 @@ def _indent(text: str, spaces: int = 4) -> str:
 
 
 def _format_typeddict(defn: TypedDictDef) -> str:
-    return _render_template("typeddict.py.j2", defn=defn)
+    total_optional = bool(defn.fields) and all(
+        not field.required for field in defn.fields
+    )
+    return _render_template(
+        "typeddict.py.j2",
+        defn=defn,
+        class_syntax=_supports_typeddict_class_syntax(defn),
+        total_optional=total_optional,
+    )
 
 
 def _format_alias(alias: TypeAliasDef) -> str:
@@ -249,22 +274,13 @@ def _method_overload_line(op: OperationDef, *, is_async: bool = False) -> str:
     )
 
 
-def _method_dispatch_line(op: OperationDef, *, is_async: bool = False) -> str:
-    return _render_template(
-        "method_dispatch.py.j2",
-        op=op,
-        is_async=is_async,
-    )
-
-
 def _fallback_method_block(
-    method: str, overloads: list[str], dispatch: list[str], *, is_async: bool = False
+    method: str, overloads: list[str], *, is_async: bool = False
 ) -> str:
     return _render_template(
         "method_block.py.j2",
         method=method,
         overloads="\n".join(overloads),
-        dispatch_block="\n\n        ".join(dispatch),
         callable_return="Awaitable[Any]" if is_async else "object",
         call_return="Any" if is_async else "object",
         is_async=is_async,
@@ -330,18 +346,12 @@ def _render_client(spec: NormalizedSpec, *, transport_mode: str) -> str:
     async_protocols: list[str] = []
     method_overloads: dict[str, list[str]] = {}
     async_method_overloads: dict[str, list[str]] = {}
-    method_dispatch: dict[str, list[str]] = {}
-    async_method_dispatch: dict[str, list[str]] = {}
     for op in spec.operations:
         protocols.append(_protocol_block(op))
         async_protocols.append(_protocol_block(op, is_async=True))
         method_overloads.setdefault(op.method, []).append(_method_overload_line(op))
         async_method_overloads.setdefault(op.method, []).append(
             _method_overload_line(op, is_async=True)
-        )
-        method_dispatch.setdefault(op.method, []).append(_method_dispatch_line(op))
-        async_method_dispatch.setdefault(op.method, []).append(
-            _method_dispatch_line(op, is_async=True)
         )
 
     method_blocks: list[str] = []
@@ -350,7 +360,6 @@ def _render_client(spec: NormalizedSpec, *, transport_mode: str) -> str:
             _fallback_method_block(
                 method,
                 method_overloads[method],
-                method_dispatch.get(method, []),
             )
         )
     async_method_blocks: list[str] = []
@@ -359,7 +368,6 @@ def _render_client(spec: NormalizedSpec, *, transport_mode: str) -> str:
             _fallback_method_block(
                 method,
                 async_method_overloads[method],
-                async_method_dispatch.get(method, []),
                 is_async=True,
             )
         )

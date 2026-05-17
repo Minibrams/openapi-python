@@ -1,4 +1,13 @@
-{% if not defn.fields -%}
+{% if class_syntax -%}
+class {{ defn.name }}(TypedDict{% if total_optional %}, total=False{% endif %}):
+{% if not defn.fields %}
+    pass
+{% else %}
+{% for field in defn.fields %}
+    {{ field.name }}: {{ field | class_field_annotation(total_optional) }}
+{% endfor %}
+{% endif %}
+{% elif not defn.fields -%}
 {{ defn.name }} = TypedDict({{ defn.name | repr }}, {})
 {% else -%}
 {{ defn.name }} = TypedDict(
