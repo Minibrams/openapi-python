@@ -13,6 +13,8 @@ from generated.my_client.types import (
 
 client = Client(base_url="http://testserver")
 
+res = client.get("/articles/{article_id}")(params={"article_id": 1})
+
 article = client.get("/articles/{article_id}")(params={"article_id": 1})
 assert_type(article, Article)
 assert_type(article["status"], Status)

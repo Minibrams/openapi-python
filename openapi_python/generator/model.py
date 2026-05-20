@@ -56,12 +56,14 @@ class FieldDef:
     name: str
     annotation: TypeAnnotation
     required: bool
+    description: str | None = None
 
 
 @dataclass(frozen=True)
 class TypedDictDef:
     name: str
     fields: tuple[FieldDef, ...]
+    description: str | None = None
 
 
 @dataclass(frozen=True)

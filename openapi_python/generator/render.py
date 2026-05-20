@@ -61,6 +61,17 @@ def _class_field_annotation(field: FieldDef, total_optional: bool) -> str:
     return annotation
 
 
+def _string_literal(value: str) -> str:
+    return repr(value)
+
+
+def _comment(value: str, spaces: int = 0) -> str:
+    prefix = " " * spaces
+    return "\n".join(
+        f"{prefix}# {line}" if line else f"{prefix}#" for line in value.splitlines()
+    )
+
+
 def _supports_typeddict_class_syntax(defn: TypedDictDef) -> bool:
     return all(
         field.name.isidentifier()
@@ -81,6 +92,8 @@ _JINJA_ENV.filters["repr"] = repr
 _JINJA_ENV.filters["annotation"] = _render_annotation
 _JINJA_ENV.filters["field_annotation"] = _field_annotation
 _JINJA_ENV.filters["class_field_annotation"] = _class_field_annotation
+_JINJA_ENV.filters["comment"] = _comment
+_JINJA_ENV.filters["string_literal"] = _string_literal
 
 
 def _render_template(name: str, **context: object) -> str:

@@ -1,21 +1,36 @@
 {% if class_syntax -%}
 class {{ defn.name }}(TypedDict{% if total_optional %}, total=False{% endif %}):
-{% if not defn.fields %}
+{% if defn.description %}
+    {{ defn.description | string_literal }}
+{% endif %}
+{% if not defn.fields and not defn.description %}
     pass
 {% else %}
 {% for field in defn.fields %}
     {{ field.name }}: {{ field | class_field_annotation(total_optional) }}
+{% if field.description %}
+    {{ field.description | string_literal }}
+{% endif %}
 {% endfor %}
 {% endif %}
 {% elif not defn.fields -%}
 {{ defn.name }} = TypedDict({{ defn.name | repr }}, {})
+{% if defn.description %}
+{{ defn.name }}.__doc__ = {{ defn.description | string_literal }}
+{% endif %}
 {% else -%}
 {{ defn.name }} = TypedDict(
     {{ defn.name | repr }},
     {
 {% for field in defn.fields %}
+{% if field.description %}
+{{ field.description | comment(8) }}
+{% endif %}
         {{ field.name | repr }}: {{ field | field_annotation }},
 {% endfor %}
     },
 )
+{% if defn.description %}
+{{ defn.name }}.__doc__ = {{ defn.description | string_literal }}
+{% endif %}
 {% endif -%}

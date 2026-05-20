@@ -363,11 +363,19 @@ def _schema_object_to_type(
                 name=prop_name,
                 annotation=field_type,
                 required=prop_name in required,
+                description=safe_get(prop_schema, "description", type=str),
             )
         )
 
     state = _without_processing(state, name)
-    state = _with_typeddict(state, TypedDictDef(name=name, fields=tuple(fields)))
+    state = _with_typeddict(
+        state,
+        TypedDictDef(
+            name=name,
+            fields=tuple(fields),
+            description=safe_get(schema, "description", type=str),
+        ),
+    )
     return _nullable(NamedAnnotation(name), nullable), state
 
 
