@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import httpx
+
+
+def _serialize_value(value: object) -> object:
+    if isinstance(value, Enum):
+        return value.value
+    return value
+
+
+def _serialize_mapping(values: Mapping[str, object] | None) -> dict[str, object]:
+    return {key: _serialize_value(value) for key, value in (values or {}).items()}
 
 
 class RuntimeDefaultTransport:
@@ -26,11 +37,16 @@ class RuntimeDefaultTransport:
         headers: Mapping[str, object] | None,
         body: object | None,
     ) -> object:
-        query_dict = {key: str(value) for key, value in (query or {}).items()}
-        header_dict = {key: str(value) for key, value in (headers or {}).items()}
+        path_params = _serialize_mapping(params)
+        query_dict = {
+            key: str(value) for key, value in _serialize_mapping(query).items()
+        }
+        header_dict = {
+            key: str(value) for key, value in _serialize_mapping(headers).items()
+        }
         response = self._client.request(
             method=method.upper(),
-            url=f"{base_url.rstrip('/')}{route.format(**(params or {}))}",
+            url=f"{base_url.rstrip('/')}{route.format(**path_params)}",
             params=query_dict or None,
             headers=header_dict or None,
             json=body,

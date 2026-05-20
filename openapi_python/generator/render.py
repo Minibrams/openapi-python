@@ -471,7 +471,7 @@ def _route_aliases(
 def _render_transport(spec: NormalizedSpec, *, protocol_only: bool) -> str:
     return _render_template(
         "transport.py.j2",
-        typing_imports="Protocol" if protocol_only else "TYPE_CHECKING, Protocol",
+        typing_imports=("Protocol" if protocol_only else "TYPE_CHECKING, Protocol"),
         include_default_transport=not protocol_only,
     )
 

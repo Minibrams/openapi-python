@@ -338,8 +338,40 @@ def _schema_map_to_type(
     ), state
 
 
+def _schema_freeform_object_to_type(schema: dict) -> TypeAnnotation:
+    return _nullable(
+        DictAnnotation(NamedAnnotation("str"), AnyAnnotation()),
+        bool(schema.get("nullable")),
+    )
+
+
+def _enum_values_for_schema(state: _TypeState, schema: dict) -> tuple[object, ...]:
+    if "enum" in schema and isinstance(schema["enum"], list):
+        return tuple(schema["enum"])
+
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+        component = ref.rsplit("/", 1)[-1]
+        component_schema = safe_get(state.components, "schemas", component, type=dict)
+        if component_schema is not None and isinstance(
+            component_schema.get("enum"), list
+        ):
+            return tuple(component_schema["enum"])
+
+    return ()
+
+
+def _with_enum_values(
+    state: _TypeState, schema: dict, annotation: TypeAnnotation
+) -> TypeAnnotation:
+    values = _enum_values_for_schema(state, schema)
+    if not values:
+        return annotation
+    return _union((annotation, LiteralAnnotation(values)))
+
+
 def _schema_object_to_type(
-    state: _TypeState, schema: dict, hint: str
+    state: _TypeState, schema: dict, hint: str, *, allow_enum_values: bool = False
 ) -> tuple[TypeAnnotation, _TypeState]:
     nullable = bool(schema.get("nullable"))
     name = _type_name_from_hint(hint)
@@ -356,8 +388,13 @@ def _schema_object_to_type(
         prop_title = str(safe_get(prop_schema, "title") or prop_name)
         prop_schema = safe_get(props, prop_name, type=dict) or {}
         field_type, state = _schema_to_type(
-            state, prop_schema, f"{name}{_pascal(prop_title)}"
+            state,
+            prop_schema,
+            f"{name}{_pascal(prop_title)}",
+            allow_enum_values=allow_enum_values,
         )
+        if allow_enum_values:
+            field_type = _with_enum_values(state, prop_schema, field_type)
         fields.append(
             FieldDef(
                 name=prop_name,
@@ -385,6 +422,7 @@ def _schema_to_type(
     hint: str,
     *,
     component_name: str | None = None,
+    allow_enum_values: bool = False,
 ) -> tuple[TypeAnnotation, _TypeState]:
     """
     Takes a JSON schema object and returns the corresponding Python type
@@ -425,16 +463,17 @@ def _schema_to_type(
     if schema_type == "array":
         return _schema_array_to_type(state, schema, hint)
 
-    additional_properties = safe_get(schema, "additionalProperties", type=dict)
-    if (
-        schema_type == "object"
-        and "properties" not in schema
-        and additional_properties is not None
-    ):
-        return _schema_map_to_type(state, schema, hint)
+    additional_properties = schema.get("additionalProperties")
+    if schema_type == "object" and "properties" not in schema:
+        if additional_properties is True:
+            return _schema_freeform_object_to_type(schema), state
+        if isinstance(additional_properties, dict):
+            return _schema_map_to_type(state, schema, hint)
 
     if schema_type == "object" or "properties" in schema:
-        return _schema_object_to_type(state, schema, hint)
+        return _schema_object_to_type(
+            state, schema, hint, allow_enum_values=allow_enum_values
+        )
 
     base = _PRIMITIVES.get(str(schema_type), "Any")
     annotation: TypeAnnotation = (
@@ -444,9 +483,11 @@ def _schema_to_type(
 
 
 def _schema_type(
-    state: _TypeState, schema: dict, hint: str
+    state: _TypeState, schema: dict, hint: str, *, allow_enum_values: bool = False
 ) -> tuple[TypeAnnotation, _TypeState]:
-    return _schema_to_type(state, schema or {}, hint)
+    return _schema_to_type(
+        state, schema or {}, hint, allow_enum_values=allow_enum_values
+    )
 
 
 def _path_symbol(path: str) -> str:
@@ -547,6 +588,7 @@ def _bucket_type(
             "required": list(bucket.required),
         },
         hint,
+        allow_enum_values=True,
     )
 
 
