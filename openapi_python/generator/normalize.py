@@ -469,6 +469,8 @@ def _schema_to_type(
             return _schema_freeform_object_to_type(schema), state
         if isinstance(additional_properties, dict):
             return _schema_map_to_type(state, schema, hint)
+        if additional_properties is None:
+            return _schema_freeform_object_to_type(schema), state
 
     if schema_type == "object" or "properties" in schema:
         return _schema_object_to_type(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI
@@ -10,14 +11,53 @@ app = FastAPI()
 
 class TaskExecutionDto(BaseModel):
     id: int
+    task_id: int
+    finished_at: datetime | None
     log: list[dict[str, Any]]
-    metadata: dict[str, object]
+    result: int | None
+    output: dict | None
+    should_retry: bool
+    stacktrace: dict | None
 
 
-@app.get("/task-executions/{task_id}", response_model=TaskExecutionDto)
-def get_task_execution(task_id: int) -> TaskExecutionDto:
-    return TaskExecutionDto(
-        id=task_id,
+class TaskDto(BaseModel):
+    id: int
+    state: int
+    queue_id: int
+    n_attempts: int
+    meta: dict | None
+    payload: dict
+    enqueued_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    pipeline_execution_id: int | None = None
+    pipeline_node_id: int | None = None
+    executions: list[TaskExecutionDto] | None = None
+
+
+@app.get("/tasks", response_model=list[TaskDto])
+def list_tasks() -> list[TaskDto]:
+    execution = TaskExecutionDto(
+        id=1,
+        task_id=1,
+        finished_at=None,
         log=[{"message": "started", "attempt": 1}],
-        metadata={"trigger": "manual", "dry_run": False},
+        result=None,
+        output={"status": "ok"},
+        should_retry=False,
+        stacktrace=None,
     )
+    return [
+        TaskDto(
+            id=1,
+            state=1,
+            queue_id=1,
+            n_attempts=1,
+            meta=None,
+            payload={"operation": "deploy"},
+            enqueued_at=datetime(2026, 1, 1),
+            started_at=None,
+            finished_at=None,
+            executions=[execution],
+        )
+    ]
