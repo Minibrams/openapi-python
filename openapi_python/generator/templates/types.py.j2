@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Literal, NotRequired, TypeAlias, TypedDict
+{% if has_field_descriptions -%}
+from importlib import import_module
+{% endif -%}
+from typing import Annotated, Any, Literal, NotRequired, TypeAlias, TypedDict
+
+{% if has_field_descriptions %}
+def _openapi_python_field(description: str) -> object:
+    try:
+        # Allow FastAPI applications and other OpenAPI-spec-auto-generating tools 
+        # to use the same field description syntax as the generated client code 
+        # without a hard dependency on Pydantic.
+        field = import_module("pydantic").Field
+    except ImportError:
+        return description
+    return field(description=description)
+{% endif %}
 
 {{ type_blocks }}

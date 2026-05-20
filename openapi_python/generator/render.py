@@ -48,17 +48,24 @@ def _field_annotation(field: FieldDef) -> str:
     """
     Jinja2 filter to format a FieldDef's annotation.
     """
-    annotation = repr(_render_annotation(field.annotation))
+    annotation = repr(_render_field_annotation(field))
     if not field.required:
         annotation = f"NotRequired[{annotation}]"
     return annotation
 
 
 def _class_field_annotation(field: FieldDef, total_optional: bool) -> str:
-    annotation = _render_annotation(field.annotation)
+    annotation = _render_field_annotation(field)
     if not field.required and not total_optional:
         annotation = f"NotRequired[{annotation}]"
     return annotation
+
+
+def _render_field_annotation(field: FieldDef) -> str:
+    annotation = _render_annotation(field.annotation)
+    if field.description is None:
+        return annotation
+    return f"Annotated[{annotation}, _openapi_python_field({field.description!r})]"
 
 
 def _string_literal(value: str) -> str:
@@ -238,6 +245,10 @@ def _format_type_definition(defn: TypeAliasDef | TypedDictDef) -> str:
             return _format_typeddict(defn)
 
 
+def _has_field_descriptions(defns: tuple[TypedDictDef, ...]) -> bool:
+    return any(field.description is not None for defn in defns for field in defn.fields)
+
+
 def _call_parameters(op: OperationDef, *, generate_requests: bool) -> dict[str, str]:
     if not generate_requests:
         return {
@@ -395,6 +406,7 @@ def _render_types(
     ]
     return _render_template(
         "types.py.j2",
+        has_field_descriptions=_has_field_descriptions(typed_dicts),
         type_blocks="\n".join(blocks).strip() + "\n",
     )
 
