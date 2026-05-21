@@ -15,6 +15,7 @@ from .model import (
     GeneratedArtifact,
     ListAnnotation,
     LiteralAnnotation,
+    MappingAnnotation,
     NamedAnnotation,
     NormalizedSpec,
     OperationDef,
@@ -34,6 +35,8 @@ def _render_annotation(annotation: TypeAnnotation) -> str:
             return f"dict[{_render_annotation(key)}, {_render_annotation(value)}]"
         case ListAnnotation(item):
             return f"list[{_render_annotation(item)}]"
+        case MappingAnnotation(key, value):
+            return f"Mapping[{_render_annotation(key)}, {_render_annotation(value)}]"
         case LiteralAnnotation(values):
             return f"Literal[{', '.join(repr(value) for value in values)}]"
         case NamedAnnotation(name):
@@ -174,6 +177,10 @@ def _annotation_dependencies(annotation: TypeAnnotation, names: set[str]) -> set
         case AnyAnnotation() | LiteralAnnotation():
             return set()
         case DictAnnotation(key, value):
+            return _annotation_dependencies(key, names) | _annotation_dependencies(
+                value, names
+            )
+        case MappingAnnotation(key, value):
             return _annotation_dependencies(key, names) | _annotation_dependencies(
                 value, names
             )

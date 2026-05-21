@@ -21,6 +21,12 @@ class ListAnnotation:
 
 
 @dataclass(frozen=True)
+class MappingAnnotation:
+    key: TypeAnnotation
+    value: TypeAnnotation
+
+
+@dataclass(frozen=True)
 class LiteralAnnotation:
     values: tuple[object, ...]
 
@@ -44,6 +50,7 @@ TypeAnnotation: TypeAlias = (
     AnyAnnotation
     | DictAnnotation
     | ListAnnotation
+    | MappingAnnotation
     | LiteralAnnotation
     | NamedAnnotation
     | TupleAnnotation

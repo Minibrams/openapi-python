@@ -35,6 +35,11 @@ class TaskDto(BaseModel):
     executions: list[TaskExecutionDto] | None = None
 
 
+class DeploymentConfigRequest(BaseModel):
+    config: dict
+    franck_submission_id: str | None = None
+
+
 @app.get("/tasks", response_model=list[TaskDto])
 def list_tasks() -> list[TaskDto]:
     execution = TaskExecutionDto(
@@ -61,3 +66,8 @@ def list_tasks() -> list[TaskDto]:
             executions=[execution],
         )
     ]
+
+
+@app.post("/deployment-configs", response_model=DeploymentConfigRequest)
+def create_deployment_config(body: DeploymentConfigRequest) -> DeploymentConfigRequest:
+    return body

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, assert_type
 
 from generated.my_client import Client
@@ -19,8 +20,8 @@ str_value: int | str = str_params["value"]
 
 int_result = client.get("/lookup/{value}")(params=int_params)
 assert_type(int_result, LookupResult)
-assert_type(int_result["value"], int | str | dict[str, Any])
+assert_type(int_result["value"], int | str | Mapping[str, Any])
 
 str_result = client.get("/lookup/{value}")(params=str_params)
 assert_type(str_result, LookupResult)
-assert_type(str_result["value"], int | str | dict[str, Any])
+assert_type(str_result["value"], int | str | Mapping[str, Any])

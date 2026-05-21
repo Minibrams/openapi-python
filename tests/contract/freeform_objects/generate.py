@@ -40,11 +40,13 @@ def main() -> None:
     assert "class TaskExecutionDtoStacktraceVariant(TypedDict):" not in source
     assert "class TaskDtoMetaVariant(TypedDict):" not in source
     assert "class TaskDtoPayload(TypedDict):" not in source
-    assert "log: list[dict[str, Any]]" in source
-    assert "output: dict[str, Any] | None" in source
-    assert "stacktrace: dict[str, Any] | None" in source
-    assert "meta: dict[str, Any] | None" in source
-    assert "payload: dict[str, Any]" in source
+    assert "from collections.abc import Mapping" in source
+    assert "log: list[Mapping[str, Any]]" in source
+    assert "output: Mapping[str, Any] | None" in source
+    assert "stacktrace: Mapping[str, Any] | None" in source
+    assert "meta: Mapping[str, Any] | None" in source
+    assert "payload: Mapping[str, Any]" in source
+    assert "config: Mapping[str, Any]" in source
     assert "executions: NotRequired[list[TaskExecutionDto] | None]" in source
 
     generated_types = importlib.import_module("generated.my_client.types")

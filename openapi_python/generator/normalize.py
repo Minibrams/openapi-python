@@ -14,6 +14,7 @@ from .model import (
     FieldDef,
     ListAnnotation,
     LiteralAnnotation,
+    MappingAnnotation,
     NamedAnnotation,
     NormalizedSpec,
     OperationDef,
@@ -340,7 +341,7 @@ def _schema_map_to_type(
 
 def _schema_freeform_object_to_type(schema: dict) -> TypeAnnotation:
     return _nullable(
-        DictAnnotation(NamedAnnotation("str"), AnyAnnotation()),
+        MappingAnnotation(NamedAnnotation("str"), AnyAnnotation()),
         bool(schema.get("nullable")),
     )
 
