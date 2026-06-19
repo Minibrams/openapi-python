@@ -3,7 +3,16 @@ from __future__ import annotations
 from typing import Literal, assert_type
 
 from generated.my_client import Client
-from generated.my_client.types import Cat, Dog, PetEnvelope
+from generated.my_client.types import (
+    Cat,
+    CiscoAccessPointConfig,
+    CiscoSite,
+    CiscoSiteArea,
+    CiscoSiteBuilding,
+    CiscoSiteFloor,
+    Dog,
+    PetEnvelope,
+)
 
 client = Client(base_url="http://testserver")
 
@@ -27,3 +36,22 @@ assert_type(dog_result["pet"], Cat | Dog)
 fetched = client.get("/pets/{pet_id}")(params={"pet_id": 1})
 assert_type(fetched, PetEnvelope)
 assert_type(fetched["pet"], Cat | Dog)
+
+area: CiscoSiteArea = {"type": "area", "name": "Global"}
+building: CiscoSiteBuilding = {
+    "type": "building",
+    "name": "HQ",
+    "country": "DK",
+}
+floor: CiscoSiteFloor = {
+    "type": "floor",
+    "name": "Ground",
+    "floor_number": 0,
+}
+site: CiscoSite = floor
+body: CiscoAccessPointConfig = {"site_hierarchy": [area, building, site]}
+
+created = client.post("/sites")(body=body)
+assert_type(created, CiscoAccessPointConfig)
+assert_type(created["site_hierarchy"][0], CiscoSite)
+assert_type(floor["type"], Literal["floor"])

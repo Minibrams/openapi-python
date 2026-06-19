@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-app = FastAPI()
+app = FastAPI(separate_input_output_schemas=False)
 
 
 class Cat(BaseModel):
@@ -33,4 +33,36 @@ def get_pet(pet_id: int) -> PetEnvelope:
 
 @app.post("/pets", response_model=PetEnvelope)
 def create_pet(body: PetEnvelope) -> PetEnvelope:
+    return body
+
+
+class CiscoSiteArea(BaseModel):
+    type: Literal["area"]
+    name: str
+
+
+class CiscoSiteBuilding(BaseModel):
+    type: Literal["building"]
+    name: str
+    country: str
+
+
+class CiscoSiteFloor(BaseModel):
+    type: Literal["floor"]
+    name: str
+    floor_number: int
+
+
+type CiscoSite = Annotated[
+    CiscoSiteArea | CiscoSiteBuilding | CiscoSiteFloor,
+    Field(discriminator="type"),
+]
+
+
+class CiscoAccessPointConfig(BaseModel):
+    site_hierarchy: list[CiscoSite]
+
+
+@app.post("/sites", response_model=CiscoAccessPointConfig)
+def create_site(body: CiscoAccessPointConfig) -> CiscoAccessPointConfig:
     return body

@@ -5,7 +5,7 @@ from enum import Enum
 {% if has_field_descriptions -%}
 from importlib import import_module
 {% endif -%}
-from typing import Annotated, Any, Literal, NotRequired, TypeAlias, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 {% if has_field_descriptions %}
 def _openapi_python_field(description: str) -> object:
