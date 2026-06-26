@@ -97,8 +97,10 @@ class OperationDef:
     query_required: bool
     headers_type: TypeAnnotation
     headers_required: bool
+    request_media_type: str | None
     body_type: TypeAnnotation | None
     body_required: bool
+    response_media_type: str | None
     response_type: TypeAnnotation
 
 

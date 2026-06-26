@@ -52,7 +52,9 @@ def main() -> None:
         },
         query=None,
         headers=None,
+        request_media_type=None,
         body=None,
+        response_media_type=None,
     )
     assert (
         http_client.url

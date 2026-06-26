@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from enum import Enum
 from typing import {{ typing_imports }}
+from urllib.parse import quote
 
 from .types import RouteLiteral as RouteLiteral
 
@@ -22,7 +23,9 @@ class Transport(Protocol):
         params: Mapping[str, object] | None,
         query: Mapping[str, object] | None,
         headers: Mapping[str, object] | None,
+        request_media_type: str | None,
         body: object | None,
+        response_media_type: str | None,
     ) -> object: ...
 
 
@@ -36,7 +39,9 @@ class AsyncTransport(Protocol):
         params: Mapping[str, object] | None,
         query: Mapping[str, object] | None,
         headers: Mapping[str, object] | None,
+        request_media_type: str | None,
         body: object | None,
+        response_media_type: str | None,
     ) -> object: ...
 
 {% if include_default_transport %}

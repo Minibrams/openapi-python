@@ -11,8 +11,8 @@
 ## Installation
 
 ```bash
-uv add openapi-python         # If you want to define your own HTTP transport (requests, asyncio, ...)
 uv add openapi-python[httpx]  # Ships with an `httpx` transport
+uv add openapi-python         # Bring your own transport (requests, asyncio, ...)
 ```
 
 
@@ -21,104 +21,62 @@ uv add openapi-python[httpx]  # Ships with an `httpx` transport
 Generate a client from an OpenAPI spec in `openapi.json`:
 
 ```bash
-# Types + HTTP transport
+# Types + Protocol + HTTP transport
 uv run openapi-python generate --spec ./openapi.json --out ./generated
 
-# Types + custom transport protocol
+# Types + Protocol
 uv run openapi-python generate --spec ./openapi.json --out ./generated --protocol-only
-```
-
-... or programatically:
-
-```python
-from pathlib import Path
-from openapi_python import GenerationRequest, generate_client
-
-result = generate_client(
-    GenerationRequest(
-        spec_source="./openapi.json",
-        output_dir=Path("./generated"),
-        package_name="my_client",
-        overwrite=True,
-    )
-)
 ```
 
 ## Using generated clients
 
 Generated clients expose route-specific callables with typed `params`, `query`, `headers`, `body`, and return values.
 
-With the built-in `httpx` transport:
-
-```python
-from generated.my_client import Client
-
-client = Client(base_url="https://api.example.com")
-book = client.get("/books/{book_id}")(params={"book_id": 1})
-```
-
-For async APIs:
-
-```python
-from generated.my_client import AsyncClient
-
-async_client = AsyncClient(base_url="https://api.example.com")
-book = await async_client.get("/books/{book_id}")(params={"book_id": 1})
-```
-
-For protocol-only clients, provide your own transport:
-
-```python
-from generated.my_client import Client
-
-client = Client(base_url="https://api.example.com", transport=my_transport)
-book = client.get("/books/{book_id}")(params={"book_id": 1})
-```
-
-
-## Extensibility
-
-`GeneratorExtensions` exposes two safe hooks:
-
-- `normalize_hooks`: transform the normalized model before rendering.
-- `render_context_hooks`: transform rendered file content map before writing.
-
-## Transport Decoupling
-
-Generated clients expose a transport protocol. You can plug in your own transport while keeping route-level typing guarantees.
-
-Use `--protocol-only` to generate clients that require a supplied transport and do not emit the built-in `httpx` transport classes. By default, generated clients include `DefaultTransport` and `DefaultAsyncTransport`, which require the `httpx` extra when instantiated.
-
-Protocol typing can be relaxed independently with `--no-routes`, `--no-requests`, and `--no-responses`. Those flags replace the corresponding route literals, request payload types, or response types with broad catch-all types.
-
-### Built-in `httpx` transport
-
-Install the `httpx` extra and generate with the default transport mode:
-
-```bash
-uv add "openapi-python[httpx]"
-uv run openapi-python generate --spec ./openapi.json --out ./generated --package my_client
-```
-
-You can supply preconfigured `httpx` clients:
+When using `openapi-python[httpx]`:
 
 ```python
 import httpx
 
 from generated.my_client import AsyncClient, Client, DefaultAsyncTransport, DefaultTransport
 
-sync_http = httpx.Client(headers={"authorization": "Bearer token"})
-async_http = httpx.AsyncClient(headers={"authorization": "Bearer token"})
+sync_http = httpx.Client(
+    base_url="https://api.example.com",
+    headers={"authorization": "Bearer token"},
+)
+async_http = httpx.AsyncClient(
+    base_url="https://api.example.com",
+    headers={"authorization": "Bearer token"},
+)
 
 client = Client(
-    base_url="https://api.example.com",
     transport=DefaultTransport(client=sync_http),
 )
 async_client = AsyncClient(
-    base_url="https://api.example.com",
     transport=DefaultAsyncTransport(client=async_http),
 )
+
+book = client.get("/books/{book_id}")(params={"book_id": 1})
+async_book = await async_client.get("/books/{book_id}")(params={"book_id": 1})
 ```
+
+When using `openapi-python`, or for `--protocol-only` clients, provide your own transport:
+
+```python
+from generated.my_client import Client
+
+client = Client(transport=my_transport)
+book = client.get("/books/{book_id}")(params={"book_id": 1})
+```
+
+See [Custom transport](#custom-transport) on how to build a custom transport.
+
+## Protocols
+
+Generated clients expose a transport protocol. You can plug in your own transport while keeping route-level typing guarantees.
+
+Use `--protocol-only` to generate clients that don't ship with a built-in transport.
+
+Protocol typing can be relaxed independently with `--no-routes`, `--no-requests`, and `--no-responses`. 
 
 ### Custom transport
 
@@ -153,14 +111,19 @@ class RequestsTransport:
         params: Mapping[str, object] | None,
         query: Mapping[str, object] | None,
         headers: Mapping[str, object] | None,
+        request_media_type: str | None,
         body: object | None,
+        response_media_type: str | None,
     ) -> object:
+        request_kwargs = {"json": body}
+        if request_media_type and request_media_type != "application/json":
+            request_kwargs = {"data": body}
         response = requests.request(
             method=method.upper(),
             url=f"{base_url.rstrip('/')}{route.format(**(params or {}))}",
             params={key: str(value) for key, value in (query or {}).items()} or None,
             headers={key: str(value) for key, value in (headers or {}).items()} or None,
-            json=body,
+            **request_kwargs,
         )
         response.raise_for_status()
         if response.content:
@@ -169,7 +132,6 @@ class RequestsTransport:
 
 
 client = Client(
-    base_url="https://api.example.com",
     transport=RequestsTransport(),
 )
 book = client.get("/books/{book_id}")(params={"book_id": 1})

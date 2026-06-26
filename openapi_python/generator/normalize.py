@@ -33,6 +33,11 @@ _PRIMITIVES = {
     "number": "float",
     "boolean": "bool",
 }
+_REQUEST_MEDIA_TYPES = (
+    "application/json",
+    "multipart/form-data",
+    "application/x-www-form-urlencoded",
+)
 _SAFE = re.compile(r"[^a-zA-Z0-9_]")
 
 
@@ -258,8 +263,8 @@ def _ensure_component(
     return NamedAnnotation(type_name), state
 
 
-def _nullable(annotation: TypeAnnotation, nullable: bool) -> TypeAnnotation:
-    return _union((annotation, NamedAnnotation("None"))) if nullable else annotation
+def _nullable(annotation: TypeAnnotation) -> TypeAnnotation:
+    return _union((annotation, NamedAnnotation("None")))
 
 
 def _schema_enum_to_type(
@@ -292,8 +297,10 @@ def _schema_union_to_type(
     state: _TypeState, schemas: list, hint: str
 ) -> tuple[TypeAnnotation, _TypeState]:
     variants: list[TypeAnnotation] = []
-    for item in schemas:
-        item_type, state = _schema_to_type(state, item, f"{hint}Variant")
+    for index, item in enumerate(schemas, start=1):
+        title = safe_get(item, "title", type=str) if isinstance(item, dict) else None
+        suffix = _pascal(title) if title else f"Variant{index}"
+        item_type, state = _schema_to_type(state, item, f"{hint}{suffix}")
         variants.append(item_type)
     return _union(variants), state
 
@@ -314,36 +321,29 @@ def _schema_type_list_to_type(
 def _schema_array_to_type(
     state: _TypeState, schema: dict, hint: str
 ) -> tuple[TypeAnnotation, _TypeState]:
-    nullable = bool(schema.get("nullable"))
     prefix_items = safe_get(schema, "prefixItems", type=list)
     if prefix_items is not None:
         item_types: list[TypeAnnotation] = []
         for item in prefix_items:
             item_type, state = _schema_to_type(state, item, f"{hint}Item")
             item_types.append(item_type)
-        return _nullable(TupleAnnotation(tuple(item_types)), nullable), state
+        return TupleAnnotation(tuple(item_types)), state
 
     item_schema = safe_get(schema, "items", type=dict) or {}
     item_type, state = _schema_to_type(state, item_schema, f"{hint}Item")
-    return _nullable(ListAnnotation(item_type), nullable), state
+    return ListAnnotation(item_type), state
 
 
 def _schema_map_to_type(
     state: _TypeState, schema: dict, hint: str
 ) -> tuple[TypeAnnotation, _TypeState]:
-    nullable = bool(schema.get("nullable"))
     additional_properties = schema["additionalProperties"]
     value_type, state = _schema_to_type(state, additional_properties, f"{hint}Value")
-    return _nullable(
-        DictAnnotation(NamedAnnotation("str"), value_type), nullable
-    ), state
+    return DictAnnotation(NamedAnnotation("str"), value_type), state
 
 
-def _schema_freeform_object_to_type(schema: dict) -> TypeAnnotation:
-    return _nullable(
-        MappingAnnotation(NamedAnnotation("str"), AnyAnnotation()),
-        bool(schema.get("nullable")),
-    )
+def _schema_freeform_object_to_type() -> TypeAnnotation:
+    return MappingAnnotation(NamedAnnotation("str"), AnyAnnotation())
 
 
 def _enum_values_for_schema(state: _TypeState, schema: dict) -> tuple[object, ...]:
@@ -374,7 +374,6 @@ def _with_enum_values(
 def _schema_object_to_type(
     state: _TypeState, schema: dict, hint: str, *, allow_enum_values: bool = False
 ) -> tuple[TypeAnnotation, _TypeState]:
-    nullable = bool(schema.get("nullable"))
     name = _type_name_from_hint(hint)
     if name in state.processing:
         return NamedAnnotation(name), state
@@ -414,7 +413,7 @@ def _schema_object_to_type(
             description=safe_get(schema, "description", type=str),
         ),
     )
-    return _nullable(NamedAnnotation(name), nullable), state
+    return NamedAnnotation(name), state
 
 
 def _schema_to_type(
@@ -433,8 +432,29 @@ def _schema_to_type(
     if not schema:
         return AnyAnnotation(), state
 
+    annotation, state = _schema_core_to_type(
+        state,
+        schema,
+        hint,
+        component_name=component_name,
+        allow_enum_values=allow_enum_values,
+    )
+
+    if schema.get("nullable"):
+        annotation = _nullable(annotation)
+
+    return annotation, state
+
+
+def _schema_core_to_type(
+    state: _TypeState,
+    schema: dict,
+    hint: str,
+    *,
+    component_name: str | None = None,
+    allow_enum_values: bool = False,
+) -> tuple[TypeAnnotation, _TypeState]:
     schema_type = schema.get("type")
-    nullable = bool(schema.get("nullable"))
     if schema_type == "null":
         return NamedAnnotation("None"), state
 
@@ -467,11 +487,11 @@ def _schema_to_type(
     additional_properties = schema.get("additionalProperties")
     if schema_type == "object" and "properties" not in schema:
         if additional_properties is True:
-            return _schema_freeform_object_to_type(schema), state
+            return _schema_freeform_object_to_type(), state
         if isinstance(additional_properties, dict):
             return _schema_map_to_type(state, schema, hint)
         if additional_properties is None:
-            return _schema_freeform_object_to_type(schema), state
+            return _schema_freeform_object_to_type(), state
 
     if schema_type == "object" or "properties" in schema:
         return _schema_object_to_type(
@@ -482,7 +502,7 @@ def _schema_to_type(
     annotation: TypeAnnotation = (
         AnyAnnotation() if base == "Any" else NamedAnnotation(base)
     )
-    return _nullable(annotation, nullable), state
+    return annotation, state
 
 
 def _schema_type(
@@ -599,50 +619,83 @@ def _request_body_type(
     state: _TypeState,
     operation: dict,
     hint: str,
-) -> tuple[TypeAnnotation | None, bool, _TypeState]:
+) -> tuple[TypeAnnotation | None, bool, str | None, _TypeState]:
     """
     Determines the type of the request body for an operation, if any.
-    Returns a tuple of (body_type, required, updated_state).
+    Returns a tuple of (body_type, required, media_type, updated_state).
     The body_type is the Python type annotation model for the request body.
     The required flag indicates whether the request body is required.
     The updated_state is the new _TypeState after processing the request body schema.
     """
     request_body = safe_get(operation, "requestBody", type=dict)
     if request_body is None:
-        return None, False, state
+        return None, False, None, state
 
-    for content_type in ("application/json", "multipart/form-data"):
-        schema = safe_get(request_body, "content", content_type, "schema", type=dict)
+    content = safe_get(request_body, "content", type=dict) or {}
+    for content_type in (
+        *_REQUEST_MEDIA_TYPES,
+        *sorted(set(content) - set(_REQUEST_MEDIA_TYPES)),
+    ):
+        schema = safe_get(content, content_type, "schema", type=dict)
         if schema is not None:
             body_type, state = _schema_type(state, schema, hint)
-            return body_type, bool(request_body.get("required", False)), state
+            return (
+                body_type,
+                bool(request_body.get("required", False)),
+                content_type,
+                state,
+            )
 
-    return None, False, state
+    return None, False, None, state
+
+
+def _is_json_media_type(media_type: str) -> bool:
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
+def _response_content(response: dict) -> tuple[str, dict | None] | None:
+    content = safe_get(response, "content", type=dict) or {}
+    if not content:
+        return None
+
+    for content_type in content:
+        if _is_json_media_type(str(content_type)):
+            schema = safe_get(content, content_type, "schema", type=dict)
+            return str(content_type), schema
+
+    content_type = str(next(iter(content)))
+    schema = safe_get(content, content_type, "schema", type=dict)
+    return content_type, schema
 
 
 def _response_type(
     state: _TypeState, operation: dict, hint: str
-) -> tuple[TypeAnnotation, _TypeState]:
+) -> tuple[TypeAnnotation, str | None, _TypeState]:
     responses = safe_get(operation, "responses", type=dict) or {}
     response_types: list[TypeAnnotation] = []
+    response_media_type: str | None = None
 
     for code in sorted(responses.keys()):
         if not code.startswith("2"):
             # Only consider 2xx responses for the main response type
             continue
 
-        schema = safe_get(
-            responses, code, "content", "application/json", "schema", type=dict
-        )
-        if schema is not None:
+        response = safe_get(responses, code, type=dict)
+        content = _response_content(response or {})
+        if content is not None:
+            content_type, schema = content
+            response_media_type = response_media_type or content_type
+            if schema is None:
+                response_types.append(AnyAnnotation())
+                continue
             if not schema:
                 response_types.append(NamedAnnotation("None"))
-            else:
-                response_type, state = _schema_type(state, schema, hint)
-                response_types.append(response_type)
+                continue
+            response_type, state = _schema_type(state, schema, hint)
+            response_types.append(response_type)
         else:
             response_types.append(NamedAnnotation("None"))
-    return _union(response_types), state
+    return _union(response_types), response_media_type, state
 
 
 def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
@@ -684,10 +737,10 @@ def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
                 state, header_bucket, f"{op_base}Headers"
             )
 
-            body_type, body_required, state = _request_body_type(
+            body_type, body_required, request_media_type, state = _request_body_type(
                 state, operation, f"{op_base}Body"
             )
-            response_type, state = _response_type(
+            response_type, response_media_type, state = _response_type(
                 state, operation, f"{op_base}Response"
             )
 
@@ -703,8 +756,10 @@ def normalize_openapi(document: dict, package_name: str) -> NormalizedSpec:
                     query_required=bool(query_bucket.required),
                     headers_type=headers_type,
                     headers_required=bool(header_bucket.required),
+                    request_media_type=request_media_type,
                     body_type=body_type,
                     body_required=body_required,
+                    response_media_type=response_media_type,
                     response_type=response_type,
                 )
             )

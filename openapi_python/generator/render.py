@@ -326,12 +326,17 @@ def _method_overload_line(
 
 
 def _fallback_method_block(
-    method: str, overloads: list[str], *, is_async: bool = False
+    method: str,
+    overloads: list[str],
+    media_types: dict[str, tuple[str | None, str | None]],
+    *,
+    is_async: bool = False,
 ) -> str:
     return _render_template(
         "method_block.py.j2",
         method=method,
         overloads="\n".join(overloads),
+        media_types=repr(media_types),
         callable_return="Awaitable[Any]" if is_async else "object",
         call_return="Any" if is_async else "object",
         is_async=is_async,
@@ -478,7 +483,9 @@ def _route_aliases(
 def _render_transport(spec: NormalizedSpec, *, protocol_only: bool) -> str:
     return _render_template(
         "transport.py.j2",
-        typing_imports=("Protocol" if protocol_only else "TYPE_CHECKING, Protocol"),
+        typing_imports=(
+            "Protocol" if protocol_only else "Any, TYPE_CHECKING, Protocol"
+        ),
         include_default_transport=not protocol_only,
     )
 
@@ -495,10 +502,15 @@ def _render_client(
     async_protocols: list[str] = []
     method_overloads: dict[str, list[str]] = {}
     async_method_overloads: dict[str, list[str]] = {}
+    method_media_types: dict[str, dict[str, tuple[str | None, str | None]]] = {}
     generate_operation_protocols = generate_routes and (
         generate_requests or generate_responses
     )
     for op in spec.operations:
+        method_media_types.setdefault(op.method, {})[op.route_literal] = (
+            op.request_media_type,
+            op.response_media_type,
+        )
         if generate_operation_protocols:
             protocols.append(
                 _protocol_block(
@@ -548,6 +560,7 @@ def _render_client(
             _fallback_method_block(
                 method,
                 method_overloads[method],
+                method_media_types[method],
             )
         )
     async_method_blocks: list[str] = []
@@ -556,6 +569,7 @@ def _render_client(
             _fallback_method_block(
                 method,
                 async_method_overloads[method],
+                method_media_types[method],
                 is_async=True,
             )
         )

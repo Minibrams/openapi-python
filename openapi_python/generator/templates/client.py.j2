@@ -10,7 +10,7 @@ from .types import *  # noqa: F403
 {{ async_protocol_blocks }}
 
 class Client:
-    def __init__(self, *, base_url: str, transport: {{ sync_transport_type }}) -> None:
+    def __init__(self, *, transport: {{ sync_transport_type }}, base_url: str = "") -> None:
         self._base_url = base_url
         self._transport = {{ sync_transport_assignment }}
 
@@ -18,7 +18,7 @@ class Client:
 
 class AsyncClient:
     def __init__(
-        self, *, base_url: str, transport: {{ async_transport_type }}
+        self, *, transport: {{ async_transport_type }}, base_url: str = ""
     ) -> None:
         self._base_url = base_url
         self._transport = {{ async_transport_assignment }}
